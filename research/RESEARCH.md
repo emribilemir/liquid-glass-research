@@ -17,6 +17,33 @@ What we learned measuring macOS 26's Liquid Glass (macOS 27.0.1, MacBook built-i
 - The System Settings › Appearance › Liquid Glass slider is `NSGlassTintAmount` in the global domain. The user keeps it
   at the leftmost (0). Passing `-NSGlassTintAmount 0.5` or `1` to a test app changes the glass visibly; 0 matches Music.
 
+## What Apple Music's player really is (verified 2026-10-26)
+
+The `NSGlassView` properties in Music's binary are not the main player: `otool -oV` on
+`/System/Applications/Music.app/Contents/MacOS/Music` puts `topControlPlatter`, `topVolumePlatter` and
+`selectorContainer` (typed `NSGlassView`) on `VideoHUDLockup` (the video HUD), and `sliderAreaGlassView` on
+`SpeakerButtonController` (the volume slider). `MPTransportPlatter`, `MPScrubberPlatter` and `MPTitlePlatter` subclass
+`AMPBindableView`, not a glass view.
+
+The running process tells the rest. `heap <pid of Music>` (works without special rights) lists live objects:
+
+- `MediaCoreUI.NowPlayingView` (24), with `MediaCoreUI.(HideWhenVolumePlatterExpanded)`, `ToggleButton`s: the player
+  bar is SwiftUI in the private framework `MediaCoreUI`.
+- `SwiftUI.GlassContainer.Entry` (10): glass inside a `GlassEffectContainer`.
+- `DesignLibrary.GlassMaterialProvider` in `AnimatableStatefulMaterialProviderBox` (14): SwiftUI's glass material, with
+  animated state (hover/press, i.e. likely `.interactive()`).
+- `_NSGlassEffectViewMaterialContext` (9): the AppKit glass views behind them. `CABackdropLayer` (45).
+
+`MediaCoreUI` lives only in the dyld shared cache; `tools/sections.swift` dlopens it and dumps its strings and Swift
+reflection names. It has a Metal `MaterialRenderer` ("Reflect, saturate + scrim treatment", lightening/darkening scrim
+opacities from artwork luminance) for the full-bleed artwork background, and fields `glassGroup`,
+`_hasGlassGroupSiblings`, `isPlatterExpanded`, `platterFrame` on the player's views. No custom highlight or rim layer
+showed up; the edge look should come from the SwiftUI glass itself, in a container.
+
+So the lab's plain `NSGlassView` / single `.glassEffect` is close but not the same construction: next, rebuild the
+player as SwiftUI `GlassEffectContainer { ... .glassEffect(.regular[.interactive()], in: .capsule) }` with the
+sub-platters as separate glass shapes (`glassGroup`), and compare its rim with Music's scroll frames.
+
 ## Ground truth: the scene behind Music's real player
 
 The player floats over the content, so a capture with the player in place cannot be compared to "what is behind it"
