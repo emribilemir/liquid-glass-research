@@ -158,6 +158,34 @@ darken blur (13.5px), gain 1.05 and a softer mirror peak (16.1 instead of 18.1px
 both. Combined and shipped: lab 2.83 (was 2.89), Music frames 5.97 (was 6.52). The remaining Music gap sits in the
 top band over bright content; frames there may also carry Music's hover and title-strip effects.
 
+## The rim mapping, measured directly (why the edge "sticks")
+
+`research/probe-top-native.json`: one 1px white line on black, moved from -4pt to +26pt from the top edge in 0.5pt
+steps (61 captures, `Lab3` SwiftUI glass at Music's geometry, focused); for each display row of the glass, the source
+row it shows (response-weighted). Display distance from the top edge -> source distance:
+
+| display (pt) | 0 | 0.5 | 1 | 1.5 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 12.5+ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| source (pt) | 21.2 | 18.3 | 16.7 | 15.2 | 14.1 | 12.4 | 11.3 | 10.6 | 10.2 | 10.1 | 10.1 | 10.4 | 10.8 | 11.4 | 12.1 | = display |
+
+- The outer ~7pt mirror content from 21pt down to 10pt in (a fold), the band from ~4pt to ~11pt magnifies a sliver
+  around 10pt in (it shows nearly the same row for ~7pt of height), and the glass is flat from ~12.5pt. The first ~9pt
+  of content behind the rim never show. As content scrolls, the magnified band holds the same row for a while: that
+  is the edge "sticking" the user sees in Apple Music.
+- Used as the SVG displacement profile directly (`params/measured-lens.json`), it scores about the same as the fitted
+  profile on Music's frames (top band 2-7pt: 7.57 vs 7.53) and worse on fine patterns (checker 7.0 -> 12.0), so it is
+  not shipped yet. Both fitted and measured profiles already produce the plateau.
+
+### Remaining gap at the outermost 2pt
+
+- Comparing at 40.5pt was misleading: Chromium snaps the backdrop region to whole CSS pixels, so the harness bar
+  started one device pixel lower than Music's. Music frames shifted by one row (`fit/*/mg*.png`, bar at 40pt) fix it:
+  the outermost 2pt error drops from 28.7 to 12.6.
+- Over dark content our edge matches Music row for row (133, 116, 100 vs 140, 115, 102); over bright content our
+  highlight is stronger (184, 176, 169 vs 200, 187, 176). Lowering the highlight target from 2.23x to 1.73-1.9x white
+  (what the lab's uniform fields gave) helps Music's frames slightly (4.77 -> 4.68) and the lab slightly less (2.83 ->
+  2.90); the outermost-2pt error stays ~12, so most of it is the first one or two device rows themselves.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself

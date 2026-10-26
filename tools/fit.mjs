@@ -93,7 +93,7 @@ const bgs = Object.fromEntries(patterns.map(n => [n, 'data:image/png;base64,' + 
 
 async function render(p, name) {
   // Music's own frames: its player sits at 40.5pt and is 54pt tall in those crops; the lab's is 40pt and 55pt.
-  p = name.startsWith('mf') ? { ...p, barTop: 40.5, barH: 54 } : { ...p, barTop: 40, barH: 55 };
+  p = name.startsWith('mf') ? { ...p, barTop: 40.5, barH: 54 } : name.startsWith('mg') ? { ...p, barTop: 40, barH: 54 } : { ...p, barTop: 40, barH: 55 };
   await page.evaluate(([src, p]) => new Promise(res => { const img = document.getElementById('bg'); img.onload = () => { window.build(p); requestAnimationFrame(() => requestAnimationFrame(res)); }; img.src = src; }), [bgs[name], p]);
   return png(await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 781, height: apple[name].h / 2 } }));
 }
@@ -102,7 +102,7 @@ async function render(p, name) {
 const glyphFree = x => (x >= 420 && x < 700) || (x >= 860 && x < 1180);
 function error(a, b, name = '') {
   let e = 0, n = 0;
-  for (let y = 78; y < 192 && y < a.h; y++) for (let x = 78; x < 1484; x += 2) { if (name.startsWith('mf') && !glyphFree(x)) continue; const o = (y * a.w + x) * 3; for (let k = 0; k < 3; k++) { e += Math.abs(a.d[o + k] - b.d[o + k]); n++; } }
+  for (let y = 78; y < 192 && y < a.h; y++) for (let x = 78; x < 1484; x += 2) { if ((name.startsWith('mf') || name.startsWith('mg')) && !glyphFree(x)) continue; const o = (y * a.w + x) * 3; for (let k = 0; k < 3; k++) { e += Math.abs(a.d[o + k] - b.d[o + k]); n++; } }
   return e / n;
 }
 async function score(p, save) {
