@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
 // Fit data: research/fit/bg (backgrounds) and research/fit/apple (native captures).
 const here = new URL('../research/fit/', import.meta.url).pathname;
 const patterns = (process.env.PATTERNS || 'scene,vstripes,hstripes,grays,h1,h4,h8,h15,h27,v1,v4,v8,v15').split(',');
-const weights = { scene: 4, scene2: 4, grays: 2, grid: 3, checker: 3, vedge: 2, hedge: 2, mf00: 3, mf03: 3, mf06: 3, mf09: 3, mf12: 3, mf15: 3, mf18: 3, mf21: 3, mf24: 3, mf27: 3, mf30: 3 };
+const weights = { mg00: 3, mg03: 3, mg06: 3, mg09: 3, mg12: 3, mg15: 3, mg18: 3, mg21: 3, mg24: 3, mg27: 3, mg30: 3, scene: 4, scene2: 4, grays: 2, grid: 3, checker: 3, vedge: 2, hedge: 2, mf00: 3, mf03: 3, mf06: 3, mf09: 3, mf12: 3, mf15: 3, mf18: 3, mf21: 3, mf24: 3, mf27: 3, mf30: 3 };
 
 function png(buf) {
   let i = 8, idat = [], w, h, ct;
@@ -128,6 +128,7 @@ else {
           for (;;) {
             const q = structuredClone(p); if (i === null) q[f] = +(q[f] + dir * d).toFixed(4); else q[f][i] = +(q[f][i] + dir * d).toFixed(4);
             if (f === 'lut') q.lut[i] = Math.max(0, Math.min(255, q.lut[i]));
+            if (f === 'hi') q.hi[i] = Math.max(0, q.hi[i]);   // a highlight cannot darken
             const s = await score(q); if (s.total < best.total - 1e-3) { p = q; best = s; console.log(f, i ?? '', i === null ? p[f] : p[f][i], best.total); } else break;
           }
         }

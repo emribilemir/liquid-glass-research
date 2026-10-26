@@ -186,6 +186,18 @@ row it shows (response-weighted). Display distance from the top edge -> source d
   (what the lab's uniform fields gave) helps Music's frames slightly (4.77 -> 4.68) and the lab slightly less (2.83 ->
   2.90); the outermost-2pt error stays ~12, so most of it is the first one or two device rows themselves.
 
+### Shipped: highlight refit (mcloud 2026-10-26)
+
+Joint fit on aligned Music frames (`mg*`) and the lab set; only changes that improve both sets were kept. The free fit
+made the highlight table zig-zag and cost the lab a little, so smooth neighbours were scored instead. Chosen
+(`params/cand-9041.json`): highlight toward 2.0x white (was 2.23x), table `[.13,.085,.032,.019,.014,.011,.009,.007,
+.005,.004,.003,.002,.001,.0005,0]`: Music frames 4.77 -> 4.68, lab 2.827 -> 2.823. In Spotify over a bright card the
+top edge reads 193, 179, 172 vs Music's 184, 176, 169 (was 200, 187, 176); over dark 137, 116, 102 vs 133, 116, 100.
+Lab scores move by +-0.03 between near-identical settings (sampling noise), so differences below that mean little.
+
+The player is snapped to whole pixels in the theme (CSS `round()` on its left edge, width rounded to even) so the
+rim and highlight do not fall on half pixels on 1x screens.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
