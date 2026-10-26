@@ -40,9 +40,12 @@ opacities from artwork luminance) for the full-bleed artwork background, and fie
 `_hasGlassGroupSiblings`, `isPlatterExpanded`, `platterFrame` on the player's views. No custom highlight or rim layer
 showed up; the edge look should come from the SwiftUI glass itself, in a container.
 
-So the lab's plain `NSGlassView` / single `.glassEffect` is close but not the same construction: next, rebuild the
-player as SwiftUI `GlassEffectContainer { ... .glassEffect(.regular[.interactive()], in: .capsule) }` with the
-sub-platters as separate glass shapes (`glassGroup`), and compare its rim with Music's scroll frames.
+**Rebuilt and confirmed.** `tools/Lab3.swift` draws a SwiftUI `.glassEffect(.regular, in: Capsule())`, alone, in a
+`GlassEffectContainer`, and with `.interactive()`, at Music's geometry (701x54pt at 40, 40.5) over the barless content
+from Music's scroll frames, focused. Against Music's own frames (glyph-free stretches, every band from the top edge to
+the bottom edge) all four SwiftUI variants differ by **0.3** per channel on average: Music's player is exactly this
+glass; container and interactive state change nothing when static. (`research/local/lab3`, script in the commit.)
+So any SwiftUI `.glassEffect` capsule is a perfect reference generator for the player, at any background.
 
 ## Ground truth: the scene behind Music's real player
 
