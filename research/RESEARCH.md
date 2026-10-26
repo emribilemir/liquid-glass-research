@@ -198,6 +198,26 @@ Lab scores move by +-0.03 between near-identical settings (sampling noise), so d
 The player is snapped to whole pixels in the theme (CSS `round()` on its left edge, width rounded to even) so the
 rim and highlight do not fall on half pixels on 1x screens.
 
+### Rim aliasing at the round ends (open)
+
+Over text, the round ends of our glass look pixelated where Music's are smooth. Chromium's feDisplacementMap samples
+the page without filtering; the outer ~3 device px compress ~21pt of page into ~2pt, so it aliases. Apple filters.
+
+Tried (all scored with fit.mjs on the lab set, Music frames mg00..mg30 and the text scene mgcaptext; frame times in
+live Spotify with `rim-aa/ab2.mjs`, 3s sinusoidal scroll, frames >20ms counted):
+
+| Variant | lab | Music+text | drops / 3s |
+| --- | --- | --- | --- |
+| shipped (pre-blur 0.4) | 2.823 | 4.630 | ~1 |
+| + rim AA pass (2nd displacement of 1px-blurred copy, mask = outer 3px) | 2.804 | 4.629 | 3-10, p95 up to 33ms |
+| rim post-blur 0.6 instead | worse | worse | 2-6 |
+| AA in primitive subregions (caps only) | - | - | ~75 |
+| global pre-blur 0.6 / 0.8 | 3.804 / 5.021 | 4.625 / 4.727 | - |
+
+The AA pass looks smoother but still not Apple's thin continuous arc, and costs frames, so it is not shipped.
+`rim-aa/rim-aa.patch` is the mcloud change (mask packed into the x map's blue channel; red takes no blue in P3
+conversion). Next: find where the drops come from (extra composites vs. the second displacement) or a cheaper AA.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
