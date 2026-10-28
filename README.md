@@ -18,11 +18,27 @@ theme that makes Spotify look like Apple Music, whose floating player uses the r
 - Fitted SVG filter error (mean abs per channel inside the bar): 21.9 for a hand-tuned glass, 2.83 on test patterns
   and 5.97 against frames of Apple Music scrolling.
 
+## See it side by side
+
+On a Mac with macOS 26 or later, Google Chrome, Spotify and the Xcode command line tools (`xcode-select --install`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/emribilemir/liquid-glass-research/main/side-by-side/install.sh | bash
+```
+
+It copies your Spotify home page (Spotify restarts twice and scrolls by itself for a few seconds), then opens two
+windows over that copy: on the left macOS's own Liquid Glass bar (SwiftUI `.glassEffect`, the glass Apple Music's
+player uses), on the right [mcloud](https://github.com/bulutakbulutt/mcloud)'s bar in Chrome. Scroll either window
+and both follow. Run the same command again to reopen it; add options after `bash -s --`: `--resnap` copies the page
+again, `--ref <branch>` compares another mcloud branch, `--theme <dir>` a local mcloud checkout. Everything lives in
+`~/Library/Application Support/LiquidGlassSideBySide`; delete that folder to remove it.
+
 ## Layout
 
 | Path | What |
 | --- | --- |
 | `research/RESEARCH.md` | Findings, method, results, dead ends, open questions |
+| `side-by-side/` | The side-by-side viewer (`install.sh`, `SideBySide.swift`) |
 | `research/fit/` | Fit backgrounds (`bg/`) and native captures (`apple/` focused, `apple-unfocused/`) |
 | `research/music-scroll/` | Barless content and reference frames from Apple Music scrolling |
 | `research/scenes/`, `research/grid/` | Real scenes behind Music's player, grid/edge probes |
