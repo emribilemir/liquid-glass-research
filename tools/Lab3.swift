@@ -12,7 +12,8 @@ let loaded = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: b
 let rep = loaded.retagging(with: NSScreen.main!.colorSpace!)!
 let size = NSSize(width: rep.pixelsWide / 2, height: rep.pixelsHigh / 2)
 let image = NSImage(size: size); image.addRepresentation(rep)
-let barW: CGFloat = 701, barH: CGFloat = 54, barX: CGFloat = 40, barY: CGFloat = 40.5
+// BAR_Y overrides the top (pt); 40 puts the bar on whole CSS pixels, where Chromium can match it exactly.
+let barW: CGFloat = 701, barH: CGFloat = 54, barX: CGFloat = 40, barY = CGFloat(Double(ProcessInfo.processInfo.environment["BAR_Y"] ?? "") ?? 40.5)
 
 struct Bar: View {
     var body: some View {

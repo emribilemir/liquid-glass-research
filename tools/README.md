@@ -31,3 +31,4 @@ Motion: `ScrollLab` scrolls a tall 2x image under the glass one step per stdin l
 `motion/ours.mjs` (Spotify on debug port 9229, kept focused) capture the same offsets for a side-by-side video.
 
 Window capture (`screencapture -l`) needs the Screen Recording permission for the terminal.
+

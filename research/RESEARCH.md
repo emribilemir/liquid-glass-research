@@ -218,6 +218,353 @@ The AA pass looks smoother but still not Apple's thin continuous arc, and costs 
 `rim-aa/rim-aa.patch` is the mcloud change (mask packed into the x map's blue channel; red takes no blue in P3
 conversion). Next: find where the drops come from (extra composites vs. the second displacement) or a cheaper AA.
 
+## medfa12/liquid-glass-react checked against our measurements (2026-10-27)
+
+[medfa12/liquid-glass-react](https://github.com/medfa12/liquid-glass-react) (commit a7d3c5e) is a WebGL2 port of
+macOS 26/27's QuartzCore glass shader, from disassembly plus fitting. Read against our native data; scripts and logs
+in `arc-lens/`. Not shipped in mcloud yet (the user wants the research settled first).
+
+**Their lens curve is Apple's; their numbers are not Music's.** The shader displaces by
+`A*(1 - sqrt((2-t)*t))`, `t = d/H` (a circle arc, strongest at the rim, zero from `H` in). Fitted to our top-edge
+probe (`probe-top-native.json`, display distance -> source distance) with only `A` and `H`: **rms 0.20pt, max
+0.49pt** (`arc-lens/lensfit.py`, A 26.3, H 13.3). A free 4-parameter arc `1-(1-(1-t)^p)^(1/q)` lands on p 1.9, q 1.8,
+i.e. the circle again. The fold, the plateau around 10pt and the "first ~9pt never show" all fall out of this one
+curve: source = d + A(1-arc) has its minimum at ~7pt. Their default lobes (inner +4, outer -13 at a 75px reference
+size) give 3-5pt at Music's size and miss the mapping entirely.
+
+**The arc scales with the radius.** Fitting only `A`, `H` in `fit.mjs` (`arcA`/`arcH`, coordinate descent):
+
+| set | bar | A | H | A/r | H/r |
+| --- | --- | --- | --- | --- | --- |
+| lab patterns | 55pt | 27.76 | 13.65 | 1.01 | 0.50 |
+| Music frames `mg*` | 54pt | 27.26 | 13.27 | 1.01 | 0.49 |
+
+Two independent sets, two sizes, same ratios. So the profile is **A = r, H = r/2** (`arcKA` 1.01, `arcKH` 0.495).
+Against the shipped 10-knot fitted table (`cand-9041`), on all 27 patterns:
+
+| | total | lab mean | Music mean | checker | grid | caps, outer 3pt |
+| --- | --- | --- | --- | --- | --- | --- |
+| shipped table | 3.926 | 2.403 | 4.679 | 6.93 | 3.33 | 12.49 |
+| arc, A = r, H = r/2 | **3.806** | **2.292** | **4.622** | **5.63** | **2.99** | **11.31** |
+
+Two constants beat the fitted table on both sets. The round ends look closer by eye too
+(`compare/arc-vs-shipped-left-end.png`): over vertical stripes Apple mirrors the stripe into a thin, even D-shaped
+ring; the shipped table makes it thick and ragged at the corners, the arc reproduces the thin ring. What remains is
+the staircase on curved edges, where Apple's ring is smooth: that is filtering, not shape (below). The prediction
+A = r, H = r/2 for other heights (the toast) is untested natively; a Lab3 capsule at 36pt and 80pt would settle it.
+Same filter structure, so frame cost should be unchanged (not yet measured in Spotify).
+
+The round end's outermost ~1pt is the one place the arc does not fit: `probe-left-native.json` gives 16.6pt at the
+rim where the top edge gives 21.2 (from 1.5pt in, left and top agree to ~0.1pt). Open.
+
+**Apple filters the compressed rim.** A 1pt line 15pt in (`h15`) lands where the arc compresses source ~2.8x. A
+point-sampled render puts it in one device row at full strength; the native capture spreads it over three rows
+(28, 40, 12 over the black level) with about the light a 1pt line has on the face divided by the compression
+(`arc-lens/rimfilter.py`). That is area sampling plus ~1 device px of softening (their renderer samples a mip chain
+with `LINEAR_MIPMAP_LINEAR`); `feDisplacementMap` samples the nearest pixel, which is the left-end pixelation. With
+the arc the compression is analytic (`ds/dd = 1 - (A/H)(1-t)/sqrt(t(2-t))`), so an AA pass can be sized from it
+instead of a fixed 3px mask. Averaging several displacement taps across the pixel footprint in SVG did **not** work:
+on a pixel-aligned page each tap rounds to a neighbouring pixel and blurs the whole face (face error 2.1 -> 4.8).
+
+**Parts of their model that Music's player does not have** (focused, regular, Liquid Glass slider at 0; `fit/apple`):
+
+- No chromatic aberration: |R-B| at most 2 over stripes and checker inside the bar (their default `aberrationAmount` 3).
+- ~~No dark edge line~~ **Wrong, corrected the same day:** over black the outermost pixel brightens 31 -> 85, but a
+  multiplicative dark line cannot show over black. Over bright content Music's glass does have one (see "Apple Music
+  scrolled 1pt per frame" below), as their macOS 27 `edgeLineOpacity` 0.74 says.
+- No light from outside: lines outside the bar never appear in it; their inner lobe (+4) samples outward at the rim.
+- Symmetric light: over black, top and bottom edges read 85, 62, 43, 40 alike, the caps' middles get none, top-left
+  and top-right match. That fits a pair of opposed lobes along y (their macOS 27 key-fill structure) with no tilt,
+  not their `keyFillDir` (0.35, -0.94). Our `|n_y|^3.5` model stands.
+
+**Their blur and colour numbers describe a background window.** Their regular glass measures an edge-transition sigma
+of 13.9px (`glass.ts`), blur radius 28-45, and nothing in the repo makes a test window key. Our unfocused glass is
+sigma ~6pt (~12px at 2x); the focused glass Music shows is nearly clear (pre-blur 0.4px). Their face matrix lifts
+black to 0.128 (33/255, ours 32) but takes white to 0.307 (78, ours 185). Use their structure, not their constants.
+
+**In motion the arc tracks the native glass better.** The 60 native scroll frames (`local/motion/native`, ScrollLab's
+`NSGlassView`, 55pt; offsets recovered from the page above the bar: exactly 8 device px per frame) rendered with
+`fit.mjs` (`FITDIR` with `bg/` = crops of `local/motion/content.png`), `arc-lens/temporal.py`:
+
+| band | error shipped | error arc | change per frame native / shipped / arc | change error shipped | change error arc |
+| --- | --- | --- | --- | --- | --- |
+| rim 0-2pt | 8.92 | 8.53 | 5.91 / 6.21 / 6.21 | 6.41 | **4.54** |
+| rim 2-7pt | 4.21 | 4.14 | 5.60 / 6.28 / 6.28 | 2.79 | 2.69 |
+| rim 7-14pt | 3.56 | 3.44 | 5.54 / 6.07 / 6.05 | 2.57 | 2.27 |
+| face | 2.52 | 2.53 | 5.74 / 5.95 / 5.96 | 1.78 | 1.79 |
+| caps 0-3pt | 13.31 | 11.83 | 10.43 / 12.78 / 12.93 | 9.71 | **7.51** |
+
+(change = mean |frame i+1 - frame i| in the band; change error = mean |our change - native change|.) Over all 60
+frames: 3.584 -> 3.493. The arc follows how the native rim changes from frame to frame clearly better (outer 2pt
+-29%, caps -23%), but both profiles change *more* per frame at the rim than native (caps 12.8 vs 10.4): that excess is
+the point-sampling flicker, and the profile shape does not remove it. It is the filtering gap again.
+
+**Sub-pixel sweep, native.** `arc-lens/sweepgen.py` makes a 1pt line at 8-24pt from the top edge (`mgs*`) and from
+the left end (`mgv*`) every 0.125pt (a quarter device pixel); `arc-lens/native.sh` captures Lab3 (`BAR_Y=40`, so
+Chromium's bar sits on the same whole pixels; 258 captures, all key) and `arc-lens/subpx.py` measures the line's image
+in the mirror band (display 0-7pt) and the flat band against the line position. (Native capture fails while the
+screen is locked: no window can become key, `lsappinfo front` shows `loginwindow`.)
+
+| | mirror: centroid jitter | light flicker | peak | difference to native, outer 14pt |
+| --- | --- | --- | --- | --- |
+| native, top edge | 0.027pt | 2.2% | 51 | - |
+| shipped, top edge | 0.034pt | 4.2% | 87 | 4.92 |
+| arc, top edge | 0.022pt | 4.1% | 88 | **3.93** |
+| native, left end | 0.027pt | 2.1% | 51 | - |
+| shipped, left end | 0.036pt | 3.8% | 88 | 4.84 |
+| arc, left end | 0.023pt | 3.6% | 87 | **3.59** |
+
+- **The round end follows the same arc.** Response-weighted source per display row/column, native: 22.1, 18.9, 16.9,
+  15.4, 14.3, 13.4, 12.7, 12.1, 11.6pt at 0, 0.5 ... 4pt from the edge, identical at the top edge and at the left end;
+  the arc gives the same within ~0.3pt at both. The earlier left-end probe (16.6pt at the rim) was taken with the bar
+  at 40.5pt, half a point off the pixel grid; it does not describe the glass.
+- **Position is right, light is not.** Native's mirrored line dims toward the rim (peak per row 23, 39, 46, then ~65)
+  and its total light in the mirror band falls smoothly as the line moves out (166, 267, 182, 121, 92, 74, 63, 39 ...
+  per 1pt). Ours stays ~90 per row and the total jumps (278, 430, 286, 183, 187, 84, 136, 95, 4, 88, 38, 2, 86):
+  point sampling hits the compressed line or misses it. Apple averages over each pixel's footprint. This is the
+  left-end pixelation, the excess flicker in motion, and the old "mirror band too bright over bright content".
+- Thin lines on the face are also dimmer and wider natively (peak 50 vs our 66 above the dark level, width 0.61pt vs
+  0.52pt): a separate, smaller tone/softness gap.
+
+**Apple Music scrolled 1pt per frame.** `swipe -150 150` on Music's Home (window 980x600pt, player 701x54pt at
+column 479, row 1054 in device px: its left end sits on a half point). Music scrolls in exact whole device pixels
+(2px per step, alignment error 0.02), so content behind the real player never sits on a sub-pixel. The page behind
+the player is rebuilt from what scrolls out above it (`music/` in the scratch run; 84 frames have it complete), cropped
+so the bar sits at 40pt, and rendered with `fit.mjs` (frames `mgm*`: masked to clean columns 860-1240 and the outer
+ring of both round ends; one tile has animated artwork and the icons sit elsewhere). Music's glass also casts a faint
+shadow, ~2 levels, just below the bar. `arc-lens/musicmotion.py`:
+
+| band | error shipped | error arc | change per frame Music / shipped / arc | change error shipped | change error arc |
+| --- | --- | --- | --- | --- | --- |
+| rim 0-2pt | 16.12 | 14.16 | 3.61 / 4.68 / 4.67 | 4.61 | **3.02** |
+| rim 2-7pt | 8.00 | 7.59 | 4.02 / 4.70 / 4.69 | 2.82 | 2.45 |
+| rim 7-14pt | 6.22 | 5.95 | 3.99 / 4.51 / 4.52 | 2.59 | 2.20 |
+| face | 4.62 | 4.62 | 4.05 / 4.32 / 4.32 | 1.72 | 1.73 |
+| caps 0-3pt | 25.31 | 25.38 | 1.93 / 3.19 / 3.10 | 3.65 | 3.70 |
+
+The same picture as the lab: the arc follows Music's rim in motion better (-35% at the outer 2pt), and both of ours
+change more per frame than Music at the rim (+30%) and at the round ends (+65%).
+
+**Music's glass has a dark edge line.** Over flat bright content (frame 10-60, page luma 105 behind the round end) the
+outermost device pixel at the middle of Music's round end reads **60**, the next 94, then the face 107-116; ours reads
+a flat 119. By angle around the left end (outermost pixel minus the page, median over frames): -34 at the middle,
+-27 at +-22 deg, -16 at +-37 deg, ~0 from +-52 deg toward the top and bottom, where the highlight takes over;
+relative to the face just inside, the outermost pixel is 25-36 darker all the way round. Ours is +13 to +46 there.
+Over black (most lab patterns) a multiplicative line cannot show, which is why the first fits never needed it; it
+also matches the old gap where our top edge read too bright over bright content (193 vs 184). This is medfa12's
+macOS 27 edge line (`edgeLineOpacity` 0.74, ~1px). The native checker and scene2 crops
+(`compare/arc-vs-shipped-left-end.png`) show the same dark arc on the left end.
+
+Fitted in `fit.mjs` (`line`, `lineW`, `linePow`: the glass is multiplied by `1 - line*(1-smoothstep(0, lineW, d))*|n_x|^linePow`
+after the highlight, as a `feBlend mode="multiply"` with a baked map; an `feComposite arithmetic` with k1 = -0.4 came
+out wrong across the whole bar in Chromium) on the lab patterns, the earlier Music frames and every 6th `mgm` frame:
+**line 0.70**, width 1.35pt, |n_x|^2 (`arc-lens/arcline.json`). The strength agrees with medfa12's decoded 0.74. A
+uniform line (no angle weight) made the fit worse: the top/bottom highlight table was fitted without a line and
+already absorbs it there; a joint refit of line and highlight could make the line uniform, as Apple's probably is.
+
+| | lab mean | Music frames `mg*` | Music run `mgm*` (every 6th) | caps 0-3pt, all 84 `mgm` | other bands |
+| --- | --- | --- | --- | --- | --- |
+| arc | 2.292 | 4.622 | 6.347 | 25.38 | - |
+| arc + edge line | 2.308 | 4.622 | **6.130** | **18.88** | unchanged |
+
+`compare/music-ends-arc-edge-line.png`: Music, shipped, arc, arc + line at both round ends (frame 30). The left end's
+dark crescent now reads like Music's; at the right end, over illustrated artwork, ours still shows stair-stepped
+mirrored shapes where Music's are smooth: the filtering gap.
+
+**Refit (the user found the line too dark, and it was).** At the left end's middle over flat red, Music's outermost
+pixel is -34 against the page and the second -10; the 0.70/1.35pt line gave -51 and -22: too dark and too wide (the
+joint fit widened it to cover our round end's face being ~10 levels too bright, a tone gap the line should not
+absorb). Scored instead on the line alone, the outermost two pixels relative to the third, +-60 deg around the left
+end, every 6th `mgm` frame (`arc-lens/linescore.py`): Music -13, -28, -34, -36, -36, -33, -28, -10. Best: **line 0.4,
+width 1pt, |n_x|^1** -> -13, -24, -32, -37, -37, -32, -24, -14 (error 3.01; |n_x|^2 at 0.5/1pt: 3.85; 0.7/1.35pt
+|n_x|^2: far off). `arc-lens/arcline.json` now holds 0.4 / 1.0 / 1.
+
+**Supersampling by scale does not work in Chromium.** A 2x element shrunk with `transform: scale(.5)` carrying the
+same displacement (`arc-lens/supersample-test.mjs`) renders byte-identical to the 1x element: the backdrop filter runs
+at screen resolution regardless of the element's transform, so there is no free 4-sample anti-aliasing. The output
+also shows the point sampling plainly: a 1pt line compressed at the rim comes out as two rows of full white.
+
+**Where this leaves the player (2026-10-27).** Ship-ready by measurement: the arc lens (A = r, H = r/2) and the edge
+line (0.4, 1pt, |n_x|, after the refit below); both are map changes plus one multiply blend, no extra displacement. Still open, and now
+the largest gap: area sampling of the compressed rim (light per row and flicker, above). Smaller: thin lines on the
+face, the faint shadow under the bar, a uniform line with a refitted highlight. Frame times in Spotify not yet
+measured for the arc + line filter.
+
+**Worth knowing, not tested yet:** the adaptive content colour (`luminanceColorMap.png`, logistic centred at 0.5,
+k 10.25, 0.349-0.800; Rec.709 luma) is for glyphs on glass, not the panel; Music's player glyphs over bright artwork
+could be checked against it. Their capsule SDF is a superellipse (exponent 6.5) fitted to a rounded rect; our
+player is a capsule and the round-end probe matches plain capsule distance from 1.5pt in.
+
+## Rim anti-aliasing, measured and made cheap (2026-10-28)
+
+Tools: `fit.mjs` options `mip`, `taps`, `post` (+ `postC`, `postMag`, `postAniso`), `dither`, `bleed` (+ `bleedW`,
+`bleedDk`); `arc-lens/runsweep2.sh <variant...>` renders the native sub-pixel sweep for variants and scores them with
+`subpx.py`; `arc-lens/blurprof.py` measures the line's width and light against display position;
+`rim-aa/ab3.mjs`, `rim-aa/ab4.mjs` time variants in the live client. Ideas also from a review by Claude Fable (map
+dithering, collapsing the map build, anisotropic blur, no bilinear knob in Skia's displacement).
+
+**What Apple's rim does, from the native sweep.** The mirrored line is *not* wider than ours anywhere (0.54 vs 0.56px
+at 2pt, 1.47 vs 1.29px at 4pt, ...), so Apple does not blur the squeezed rim. Two things differ: (1) light: Apple's
+mirrored line carries ~60% of ours across the band (face ~75%), flat colour matches; (2) smoothness: most of the
+mirrored light sits in the plateau 4-11pt in, where the arc **magnifies** the page up to ~7x, and Chromium magnifies
+nearest-neighbour: each page pixel becomes a block of identical rows that jumps as content moves. That is the
+"pixel-based vs vector" look the user describes, more than the squeezed outer pixels.
+
+| variant (top edge / left end) | mirror flicker | line width | peak | diff to native |
+| --- | --- | --- | --- | --- |
+| Apple | 2.2% / 2.1% | 0.50 / 0.51pt | 51 | - |
+| arc + line | 4.1% / 3.6% | 0.43pt | 88 | 3.93 / 3.47 |
+| taps x2 / x4 (spread by squeeze) | 4.0 / 3.4%, 3.8 / 3.3% | 0.43pt | 86 | ~same |
+| fake mipmaps (source blur by squeeze) | 3.2% / 2.7% | 0.60pt | 73 | 4.06 / 3.74 |
+| blur after the bend, where it squeezes | 3.4% / 2.6% | 0.66pt | 69 | worse |
+| blue-noise map dither | 4.1% / 3.6% | 0.44pt | 85 | 3.76 / 3.41 |
+| blur after the bend where it squeezes *or magnifies* | 2.2% / 1.6% | 0.71pt | 67 | 4.48 / 3.90 |
+| **vertical blur 1px where it magnifies** (`post` 1, `postC` 2, `postMag` 2, `postAniso`) | 2.8% / 2.5% | 0.51pt | 87 | 4.00 / 3.49 |
+| + darken result mixed in near the rim (`bleed` .6, `bleedW` 12, `bleedDk`) | 2.7% / 3.1% | 0.51 / 0.45pt | 81 | **3.68 / 3.16** |
+| + blur along the normal (`postAniso` 2: vertical by n_y^2, sideways by n_x^2) | **2.7% / 2.5%** | **0.51 / 0.50pt** | 81 | **3.68 / 3.12** |
+
+The last row is `arc-lens/candidate.json`: arc lens, edge line 0.4/1pt/|n_x|, a 1px blur along the edge normal mixed
+in where the bend magnifies (weight (1/c - 1)/2), and the darken result (min of the page and its wide blur) mixed in
+near the rim (0.6 at the edge, smoothstep to 0 at 12pt). Isotropic blurs lost on the grid and checker (they smear
+across the edge); the directional one wins there. Edge bleed toward the wide blur itself (medfa12's) dimmed little and
+widened the line; mixing toward the darken result dims thin bright detail and leaves width and flat colour alone.
+
+| | lab mean | Music frames `mg*` | Music run, rim 0-2 / 2-7 / 7-14pt / caps (error) | change error 2-7 / 7-14pt |
+| --- | --- | --- | --- | --- |
+| arc + line | 2.293 | 4.622 | 14.16 / 7.59 / 5.95 / 20.63 | 2.45 / 2.20 |
+| candidate (vertical blur) | 2.151 | 4.551 | 13.58 / 7.14 / 5.78 / 20.17 | 2.29 / 2.01 |
+| candidate (along the normal) | **2.145** | **4.551** | - | - |
+
+`compare/music-candidate-rim-aa.png`: Music, shipped, arc + line, candidate (vertical) at both ends and the top edge of
+one Music frame; the mirrored content at the top edge loses its stair-steps. Still open: thin bright lines are
+brighter than Apple's everywhere (peak 81 vs 51 in the rim, 66 vs 50 on the face): the darken/tone fit, not the rim.
+
+**Why every AA pass was expensive: an SVG filter recomputes shared results.** In Spotify's Chromium a primitive result
+read by k later primitives is computed k times: k steps that each average the previous result with itself cost
+51-84ms (k = 2), ~230ms (4) and ~1.5s (6) per frame (`ab3.mjs`, `fan2..6`). The shipped `#am-glass` already pays for
+it: the darken step reads the bent page three times and the tone reads "glass" twice, so the bend runs ~6 times a
+frame. Each AA part alone was cheap (vertical blur 2 slow frames per 3 runs, darkening 0), but together inside the one
+filter they multiplied: 399 slow frames in 5 runs, ~30 fps. One extra fake-mip level alone: 6 (cheap).
+
+**The fix: split the glass into stacked layers.** Two plain capsules under the player (z-index 59, body-level
+siblings, no backdrop root between them and the page): layer 1's `backdrop-filter` only bends; layer 2's does the
+rest (darken, tone, highlight, AA) reading layer 1's result as its backdrop, a texture that is cheap to read many
+times. Same picture (`ab4.mjs SHOT=dir`, mean difference 0.3-0.8 against the single filter, live content moving).
+Frames > 20ms per 3s scroll, 4 runs (`ab4.mjs`, 2x Mac):
+
+| | slow frames | p95 |
+| --- | --- | --- |
+| shipped single filter | 2 (36 with a warm-up run) | 16.8-18ms |
+| split, same picture | **0** | 16.8ms |
+| split + AA (vertical) | 1 | 16.8ms |
+| split + AA (along the normal) | 4 | 16.8ms |
+| AA in the single filter | 249 | 33.4ms |
+
+So the layered glass is slightly cheaper than today and carries the AA for free. Not checked: Windows / 1x, the toast
+(same structure), `prefers-reduced-transparency`, and whether hover/press states on the player need the layers to
+follow it (they are separate elements). Skia's displacement samples nearest with no knob, and a 2x element shrunk with
+`transform` filters at screen resolution (both above), so this is the practical path.
+
+## Round-end edge stair-steps (2026-10-28, after shipping the two-layer glass)
+
+The user saw slight aliasing on the outermost pixels of the right end. Measured:
+
+- **Not the silhouette.** Over a flat white page, the boundary pixels of both ends take in-between values (the rounded
+  clip of `backdrop-filter` is antialiased, headless and in the live client alike), and left and right give identical
+  histograms: nothing is right-side specific in the geometry.
+- **The outermost ring's content.** At the round ends the bend points at the end's centre, so along the curve the
+  page is magnified by (r - d) / (r - d - shift): ~100x at the edge, ~3x at 1pt, ~1.2x at 7pt; the straight edges
+  are 1:1 along the edge. The outer ring (~170 device px around) shows a circle only a few page pixels around, and
+  nearest-neighbour sampling turns that into long runs with hard steps that follow the curve. It shows over detailed
+  artwork (in the user's view, the right end).
+- **Blurring along the curve barely helps** (`fit.mjs` `tanDiv`, `tanBlur`; caps error, outer 0-3pt / 3-7pt):
+
+| | lab caps | Music caps | lab / Music overall |
+| --- | --- | --- | --- |
+| shipped candidate | 15.28 / 6.83 | 17.85 / 10.03 | 2.145 / 6.034 |
+| + along the curve, existing 1px blurs, /2 | 15.93 / 6.95 | 17.62 / 9.94 | 2.147 / 6.026 |
+| + along the curve, /4 | 14.82 / 6.87 | 17.69 / 9.98 | 2.142 / 6.030 |
+| + own 2px blurs, /2 | 17.17 / 7.46 | 17.57 / 9.84 | 2.157 / 6.021 |
+| + own 3px blurs, /3 | 16.14 / 7.39 | 17.52 / 9.84 | 2.153 / 6.019 |
+
+  At most -2% on Music's ends, mixed on the lab: not shipped. A blur after the bend can only smear the few page
+  pixels the nearest-neighbour lookup already picked; Apple filters while sampling (bilinear, mip levels), so its ring
+  is a smooth gradient of the right pixels. Closing this needs filtered sampling in the displacement itself, which
+  Chromium's `feDisplacementMap` does not offer.
+
+## Exact bilinear sampling, thin-line darkening, shadow (2026-10-28, shipped on the research branch)
+
+Ideas and review: Claude Fable. `fit.mjs` options `bilin`, `nmin` (+ `nminBlur`), `rimMip` (+ `rimMipC`), `layers` (the
+harness now splits the filter like the theme; without it, steps that read a result twice made single-filter renders
+time out).
+
+- **Bilinear from 4 fixed taps.** The bend layer reads the composited backdrop, which is device pixels, and the
+  geometry is fixed, so for each pixel the 4 page pixels around its source point and their weights are static: 4
+  `feDisplacementMap`s, each with its own map aimed at one pixel centre (Chromium takes the nearest pixel to the
+  displaced point; 8-bit step 0.45 device px, error <= 0.23), blended with two static weight masks (`in`/`over`).
+  The face is pixel-identical (weights 0). It replaces the post-bend blur: native sweep flicker 2.1% / 1.9% (Apple
+  2.2% / 2.1%, before 2.7% / 2.5%), line width 0.50 / 0.46pt (Apple 0.50 / 0.51), lab 2.145 -> 2.088, Music run
+  6.034 -> 5.979, round ends 3-7pt lab 6.83 -> 5.99. Needs the bar on whole device pixels: used at integer screen
+  scales; at 125%/150% the theme keeps one tap and the post-bend blur.
+- **Thin-line darkening** (min with a 1px blur, 30%, second layer): mirror peak 79 -> 71, face 66 -> 58 (Apple 51/50),
+  sweep difference 3.56 -> 3.03 / 3.10 -> 2.55, round ends on Music 17.24 -> 16.75, Music run 5.973 -> 5.921, lab
+  equal (2.092 -> 2.079). Stronger (50%) gets closer on lines but costs the lab (2.236).
+- **Rim mip** (a blurred copy displaced once, mixed in where the squeeze > 2.5): no gain anywhere; not shipped.
+- **Shadow:** Music's bar darkens the page under it by ~1.1% for 4pt, 0.4% by 8pt, nothing above or beside it.
+  `box-shadow: 0 4px 8px #00000005` matches it.
+
+Live client (2x Mac): 0 slow frames in 5 scroll runs, p95 16.8ms. Over the page behind Music's player (frames 10/30/60),
+difference to Music, main -> previous commit -> now: face 6.65/7.60/6.89 -> 6.01/6.89/6.25 -> 5.95/6.69/6.05, top rim
+9.47/13.26/9.93 -> 8.72/11.59/7.84 -> 8.61/11.13/7.44, left end 6.86/5.75/6.68 -> 5.10/4.84/5.79 -> 4.92/4.71/5.72,
+right end 15.82/11.79/12.14 -> 13.64/9.79/10.31 -> 13.41/9.57/10.43, under the bar 1.26/1.29/0.58 -> 0.31 or less
+(`compare/glass-music-old-bilinear*.png`). Visible remaining gap: the round ends' outline over bright content, where
+Music's dark rim makes the transition gradual and ours steps from bright glass to the dark page.
+
+## Round-end outline (2026-10-28)
+
+The visible gap after bilinear sampling: over bright content, our round ends stepped from bright glass to the dark page.
+
+- **First fit, on Music's frames only (withdrawn):** Music's ends looked like a near-black outermost pixel plus ~7%
+  darkening fading over ~20px, and a map with both (`1 - (0.85*exp(-d/0.4px) + 0.08*(1 - smoothstep(0, 20px, d)))*|n_x|`)
+  matched Music's frames (left end 6.31 -> 4.97, right 20.59 -> 17.94).
+- **Checked on macOS's own glass** (Lab3, `BAR_Y=40`; over Music's page it equals Music's frame pixel for pixel, one
+  pixel to the left) on flat pages from black to white, flat colours and a Liked-style tile at 8-40pt into the left
+  end: the glass inside the end is **not** darkened (-1..-4 at most) and the dark pixel lies **just outside** the
+  shape: the page at ~0.47 (105 -> 49, 240 -> 113, 70 -> 28; 18 -> 6), fading along the curve faster than |n_x|
+  (sum of the ring's deficit at ~23 deg: ~0.78 of the end's, so ~|n_x|^3), none at the top and bottom. The gradual
+  darkening in Music's frame comes from its blur reaching the dark strip beside the bar; a backdrop-filter only sees
+  what is under its box. The first fit darkened flat bright content (white: 179 -> 141 at the end) and was dropped.
+- **The refracted tile edge** (the user's question: is the Liked tile's edge straight in our glass but rounder in
+  Apple's?): both are straight in the flat middle and bend in at the top and bottom only; traced row by row the edge
+  sits within 0.1-1.5px of Apple's, with the same ~1px sharpness.
+- **Shipped: a hairline outside the glass in CSS** (`.am-glass-rim`): a 1-device-pixel border at 55% black just
+  outside the glass box, masked by a horizontal gradient to (1 - x/R)^3 (stops at quarters of the radius). Being a
+  border, it is antialiased along the curve; an in-glass line weighted per pixel centre showed stair-steps. Difference
+  to Apple at the left end, all pixels / outer ring (device px -2..3):
+
+| candidate | flat pages | tiles | Music's page |
+| --- | --- | --- | --- |
+| in-glass line, 1 device px, 0.9 | 6.10 / 11.36 | 6.15 / 24.74 | 5.02 / 12.24 |
+| in-glass line, box-filtered 1px, 0.55 | 6.10 / 11.37 | 6.17 / 24.95 | 4.76 / 9.65 |
+| CSS hairline 0.45, \|n_x\| | 5.96 / 9.21 | 4.41 / 15.22 | 4.63 / 10.32 |
+| CSS hairline 0.55, \|n_x\| | 6.01 / 9.66 | 4.49 / 16.06 | 4.65 / 10.66 |
+| CSS hairline 0.5, \|n_x\|^2 | 5.92 / 8.80 | 4.33 / 14.53 | 4.61 / 9.98 |
+| **CSS hairline 0.55, \|n_x\|^3 (shipped)** | **5.91 / 8.77** | **4.32 / 14.42** | **4.59 / 9.91** |
+
+  Centre row, Apple / ours: grey 105: 49, 117 / 47, 118; white: 113, 179 / 108, 179; black 18: 6, 48 / 8, 46.
+  Scroll timing (5 runs, A/B with the hairline hidden): equal.
+- **Page mix (the light halo on the left end over a white tile):** at the outermost pixels Apple's glass shows the
+  page right under them, blended with the bent page. Fitted as w = (Apple - ours) / (flat response(page) - ours) on
+  the tile pages: 0.45-0.58 at the edge pixel, 0.18-0.23 one in, ~0 two in, the same on white and the Liked tile.
+  Shipped in the bend layer as w = 0.65*(1 - d/2.2 device px): taps 0 and 2 read the pixel itself, taps 1 and 3 the
+  nearest bent pixel, `fx` = 1 - w (no extra primitive). Everywhere vs ends only (|n_x|^2): tiles 3.71 vs 3.89, outer
+  ring 8.78 vs 10.41, Music's page top rim 6.40 vs 6.68, flat pages unchanged; 0.8 and a 3px fade score the same or worse.
+- Left over: Music's blur of the page beside the bar (needs the glass to see outside its box).
+- **Side-by-side viewer** (`side-by-side/`): `SideBySide snap` copies the open Spotify page a screen at a time
+  (player, sidebar and toolbar hidden, sticky headers unstuck); the viewer shows it under SwiftUI's `.glassEffect`
+  (left) and under the theme in Chrome (`dev/preview.html`, right), scrolled together over Chrome's DevTools protocol;
+  the native window keeps focus so its glass stays in the focused look. `install.sh` does all of it.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
