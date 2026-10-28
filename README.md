@@ -6,8 +6,8 @@ theme that makes Spotify look like Apple Music, whose floating player uses the r
 
 **The full write-up is [research/RESEARCH.md](research/RESEARCH.md).** In short:
 
-- Apple Music's player is an `NSGlassView`, a private subclass of `NSGlassEffectView`; at the regular style it renders
-  the same as `NSGlassEffectView` and SwiftUI `.glassEffect(.regular)`.
+- Apple Music's player is SwiftUI glass (`MediaCoreUI.NowPlayingView` in a `GlassEffectContainer`); a SwiftUI
+  `.glassEffect(.regular)` bar at the same geometry matches Music's own frames pixel for pixel.
 - **Focus changes the glass.** In a focused window it is nearly clear (fine detail stays); in a background window it is
   diffuse. Borderless test windows cannot become key, so naive measurements get the wrong state.
 - The focused glass is not a blur: a luminance tone (black 32, white 185, hue kept), a darken halo that dims bright
@@ -16,7 +16,37 @@ theme that makes Spotify look like Apple Music, whose floating player uses the r
 - Ground truth in motion: Apple Music can be scrolled synthetically with trackpad-style events, and its own frames
   give the content behind the player.
 - Fitted SVG filter error (mean abs per channel inside the bar): 21.9 for a hand-tuned glass, 2.83 on test patterns
-  and 5.97 against frames of Apple Music scrolling.
+  and 5.97 against frames of Apple Music scrolling in the first fit; the steps below took the edges further.
+
+## How it got here
+
+Each step was measured against Apple's glass before it shipped in mcloud; the numbers are the difference to Apple
+(mean abs per channel, lower is better). Details, dead ends and every table are in [RESEARCH.md](research/RESEARCH.md).
+
+| Step | What changed | Result |
+| --- | --- | --- |
+| Start | mcloud's hand-tuned lens, white to 0.6 | 21.9 on test patterns |
+| 1. Which glass, which state | Found the view Music's player uses and that **window focus changes the glass** (clear when focused, diffuse in the background); built native lab apps that capture it in the right state | Lab bar matches Music's frames to 0.3 |
+| 2. First fit | Luminance tone, a darken halo, a mirror fold at the rim drawn at device resolution, top/bottom highlight | 21.9 → 2.9 on test patterns |
+| 3. Ground truth in motion | Scrolled Apple Music itself and fitted to its frames and the test patterns together; highlight refit | Music frames 6.52 → 5.97, patterns 2.89 → 2.83 |
+| 4. The rim, measured directly | Mapped where each rim pixel samples the page; found Chromium recomputes a shared filter result once per reader, which made every anti-aliasing pass slow | Two-layer glass (bend once, then the rest) |
+| 5. Apple's lens curve | Arc lens, edge line, a blur along the edge normal where the bend magnifies | Patterns 2.29 (curve + line) → 2.15 with the normal blur; top-edge stair-steps gone |
+| 6. Exact bilinear sampling | 4 fixed displacement taps blended by static weights instead of nearest-pixel lookups; thin-line darkening; Music's shadow | Rim flicker 2.7% → 2.1% (Apple 2.2%), line width 0.50pt (Apple 0.50) |
+| 7. Round-end outline | Apple's dark hairline sits just **outside** the glass (fading as \|n_x\|³), and its outermost pixels mix in the page right under them | Left end over tiles 6.15 → 3.71, outer ring 24.7 → 8.8 |
+| 8. Side-by-side viewer | Your own Spotify page under macOS's glass and under mcloud's, one scroll | [See it side by side](#see-it-side-by-side) |
+
+![Apple Music, mcloud main and the research branch over the same page](research/compare/glass-music-old-bilinear.png)
+
+*The same page behind Apple Music's player (top), mcloud `main` and the research branch (step 6); below, both round
+ends and the top edge enlarged. Labels are Turkish: "Eski" = old, "Yeni" = new, "sağ/sol uç" = right/left end.*
+
+The left-end halo and hairline of step 7 are in [left-end-halo.png](research/compare/left-end-halo.png) and
+[left-end-hairline.png](research/compare/left-end-hairline.png). Steps 5–7 are on mcloud's
+[`claude/liquid-glass-research-e10174`](https://github.com/bulutakbulutt/mcloud/tree/claude/liquid-glass-research-e10174)
+branch, not yet in its `main`.
+
+**Still open:** Apple's glass also blurs the page just beside the bar into its rim, which a `backdrop-filter` cannot
+see; thin bright lines are still a little brighter than Apple's; light pages are less covered by the fit than dark ones.
 
 ## See it side by side
 
