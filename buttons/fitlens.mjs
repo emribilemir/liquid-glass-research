@@ -54,8 +54,8 @@ await page.evaluate(shapeList => {
     for (const s of shapeList) {
       // As glass-buttons.js: the shape box holds the rim; the face (the lens) is larger by the margin of page it reads.
       const box = document.createElement('div'), f = document.createElement('div'), m = over.margin || 0; f.className = 'lg-glass-face';
-      Object.assign(box.style, { position: 'absolute', left: s[0] + 'px', top: s[1] + 'px', width: s[2] + 'px', height: s[3] + 'px' });
-      f.style.inset = -m + 'px'; box.append(Object.assign(document.createElement('div'), { className: 'lg-glass-rim' }), f); host.append(box); lgLens(f, over);
+      Object.assign(box.style, { position: 'absolute', left: s[0] + 'px', top: s[1] + 'px', width: s[2] + 'px', height: s[3] + 'px', isolation: 'isolate' });
+      f.style.inset = -m + 'px'; box.append(f); host.append(box); lgRim(box); lgLens(f, over);
     }
   };
 }, shapeList);

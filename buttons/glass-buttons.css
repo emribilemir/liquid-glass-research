@@ -12,14 +12,14 @@
   position: absolute; inset: 0; border-radius: 999px; pointer-events: none;
   -webkit-backdrop-filter: blur(1.5px) saturate(1.15) brightness(1.3); backdrop-filter: blur(1.5px) saturate(1.15) brightness(1.3);
 }
-/* Apple's hairline outside the round ends (macOS's 36pt glass, BtnLab): the page darkened to ~70% in the 1pt band just
-   outside the glass, fading as |n_x|^3 toward the top and bottom (mask stops at quarters of the 18px radius). An inset
-   shadow on a box 1px larger draws exactly that band; a 0.5px border would be rounded up to 1px and overlap the glass. */
+/* Apple's hairline outside the round ends (macOS's 36pt glass, BtnLab): the page at ~0.4 in the one device pixel just
+   outside the glass, fading as |n_x|^3 toward the top and bottom (mask stops at quarters of the 18px radius). lens.js's
+   lgRim() draws it as an SVG stroke in this 1px larger box. */
 .lg-glass-rim {
-  position: absolute; inset: -1px; z-index: -1; border-radius: 999px; pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, var(--lg-rim, .3));
-  -webkit-mask-image: linear-gradient(90deg, #000, #0000006c 4.5px, #00000020 9px, #00000004 13.5px, #0000 18px, #0000 calc(100% - 18px), #00000004 calc(100% - 13.5px), #00000020 calc(100% - 9px), #0000006c calc(100% - 4.5px), #000);
-          mask-image: linear-gradient(90deg, #000, #0000006c 4.5px, #00000020 9px, #00000004 13.5px, #0000 18px, #0000 calc(100% - 18px), #00000004 calc(100% - 13.5px), #00000020 calc(100% - 9px), #0000006c calc(100% - 4.5px), #000);
+  position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); z-index: -1; pointer-events: none; overflow: visible;
+  stroke: #000; stroke-opacity: var(--lg-rim, .55);
+  -webkit-mask-image: linear-gradient(90deg, #000, #0000006c 5.5px, #00000020 10px, #00000004 14.5px, #0000 19px, #0000 calc(100% - 19px), #00000004 calc(100% - 14.5px), #00000020 calc(100% - 10px), #0000006c calc(100% - 5.5px), #000);
+          mask-image: linear-gradient(90deg, #000, #0000006c 5.5px, #00000020 10px, #00000004 14.5px, #0000 19px, #0000 calc(100% - 19px), #00000004 calc(100% - 14.5px), #00000020 calc(100% - 10px), #0000006c calc(100% - 5.5px), #000);
 }
 /* Pressed light across a group: flat within 17pt of the pointer, half at 35pt, 0.3 at 55pt (Music's capsule). */
 .lg-glass-face::after {

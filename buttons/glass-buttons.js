@@ -55,7 +55,7 @@
       // The lens lives on its own face, resized while pressed so the lens is redrawn at the new size: scaling a
       // backdrop-filter resamples its result and blurs the rim. The segments (glyphs, lights) scale about the centre.
       this.face = document.createElement('div'); this.face.className = 'lg-glass-face'; el.prepend(this.face);
-      this.rim = Object.assign(document.createElement('div'), { className: 'lg-glass-rim' }); el.prepend(this.rim);
+      this.rim = window.lgRim ? lgRim(el) : null;
       const cx = el.offsetWidth / 2, cy = el.offsetHeight / 2;
       this.segs.forEach(s => { s.style.transformOrigin = `${cx - s.offsetLeft}px ${cy - s.offsetTop}px` });
       el.addEventListener('pointerdown', e => this.press(e));
@@ -117,7 +117,7 @@
       const s = this.el.style, k = this.scale.x, gx = (k - 1) * this.el.offsetWidth / 2, gy = (k - 1) * this.el.offsetHeight / 2;
       s.setProperty('--lg-t', `translate(${this.fx.x.toFixed(3)}px,${this.fy.x.toFixed(3)}px)`);
       const m = M.lens.margin;
-      this.face.style.inset = `${(-gy - m).toFixed(3)}px ${(-gx - m).toFixed(3)}px`; this.rim.style.inset = `${(-gy - 1).toFixed(3)}px ${(-gx - 1).toFixed(3)}px`;
+      this.face.style.inset = `${(-gy - m).toFixed(3)}px ${(-gx - m).toFixed(3)}px`; if (this.rim) Object.assign(this.rim.style, { left: `${(-gx - 1).toFixed(3)}px`, top: `${(-gy - 1).toFixed(3)}px`, width: `calc(100% + ${(2 * gx + 2).toFixed(3)}px)`, height: `calc(100% + ${(2 * gy + 2).toFixed(3)}px)` });
       const t = Math.abs(k - 1) < 1e-4 ? '' : `scale(${k.toFixed(4)})`; this.segs.forEach(seg => { seg.style.transform = t });
       if (this.p) { s.setProperty('--lg-px', (this.p[0] + gx + m).toFixed(1) + 'px'); s.setProperty('--lg-py', (this.p[1] + gy + m).toFixed(1) + 'px') }
       s.setProperty('--lg-glow', (this.glow.x * M.glow).toFixed(4));

@@ -109,6 +109,16 @@
     if(typeof ResizeObserver==='function')new ResizeObserver(draw).observe(node);draw();
     const watchResolution=()=>matchMedia(`(resolution: ${devicePixelRatio||1}dppx)`).addEventListener('change',()=>{draw();watchResolution();},{once:true});watchResolution();
   }
+  // lgRim(box): Apple's hairline, the page at ~0.4 in the one device pixel just outside the glass (BtnLab: grey 64 ->
+  // 26, 192 -> 99), strongest at the round ends (CSS mask on .lg-glass-rim). An SVG stroke of 1/dpr along the shape
+  // grown by half that: Chromium drops sub-pixel box-shadow spreads and rounds thin borders up to 1px.
+  window.lgRim=box=>{
+    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),rect=document.createElementNS(ns,'rect');
+    svg.setAttribute('class','lg-glass-rim');svg.setAttribute('aria-hidden','true');rect.setAttribute('fill','none');svg.append(rect);box.prepend(svg);
+    const fit=()=>{const {width:w,height:h}=svg.getBoundingClientRect(),t=1/(devicePixelRatio||1),pad=1;if(!w)return;
+      rect.setAttribute('x',pad-t/2);rect.setAttribute('y',pad-t/2);rect.setAttribute('width',w-2*pad+t);rect.setAttribute('height',h-2*pad+t);rect.setAttribute('rx',(h-2*pad+t)/2);rect.setAttribute('stroke-width',t);};
+    if(typeof ResizeObserver==='function')new ResizeObserver(fit).observe(svg);fit();return svg;
+  };
   let n=0;
   // over: overrides of glassStates.focused (fitlens.mjs fits them at button sizes).
   window.lgLens=(node,over)=>{

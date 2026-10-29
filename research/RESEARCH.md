@@ -662,9 +662,12 @@ macOS's glass at given shapes over a 2x background, focused (`capb.sh` keeps onl
   125,36,84, blue 40,90,220 -> 51,109,255, so `gain` fits to ~1.15 (player 1.05).
 - **Rim:** on flat pages the light line is only along the top and bottom, as on the player (90 deg: 123 vs 123 over
   grey 64), symmetric; the bright spot seen at a red circle's upper left is page content (a light line) bent by the
-  lens, not a specular. The dark hairline lies in the 1pt band right outside the glass (~70% of the page at the
-  ends, fading toward the top and bottom). A 0.5px CSS border is rounded up to 1px by Chromium and overlapped the
-  glass; an inset shadow on a box 1px larger draws the band exactly.
+  lens, not a specular. The dark hairline is **one device pixel** right outside the glass, the page at ~0.4-0.5
+  there at the ends (grey 64 -> 26, 192 -> 99, white -> 100, Music's dark strip 43 -> 16), fading toward the top and
+  bottom. Chromium cannot draw that in CSS: a 0.5px border is rounded up to 1px, a 0.5px box-shadow spread is
+  dropped (not drawn at all), a 1px inset shadow covers two device pixels. `lgRim()` (lens.js) draws it as an SVG
+  stroke of 1/dpr along the shape grown by half that, at opacity 0.55, under the same |n_x|^3 mask. (Until this the
+  fit harness hid the rim behind its background image: the box had no stacking context. Fixed with `isolation`.)
 - **Fit** (`buttons/fitlens.mjs`, the lens of `buttons/lens.js` against `research/buttons/fit/lab/`, 41 patterns
   cropped from the player's fit set plus flat greys and colours; error inside each shape and 3px around it):
   the player's parameters score 5.61; the exact (4-tap) bend and the hairline in the right band 4.77; on a
@@ -711,7 +714,8 @@ fitting it:
   (`research/buttons/params-outer.json`: `outerMix` 0.68, `outerEnd` 0.75, `outerW` 2.09, `washMix` 0.085 over
   10px) takes 4.89 (no margin) to **4.15** on the 15-pattern set and reaches ~77% of the probes' edge (left end
   114,48 at 1pt); on the scene, Apple's red line at the capsule's left end is 156,76,63 / 104,72,66 and ours
-  148,78,64 / 109,75,69 (was 75,69,67 / 75,69,67). Still open: the sharp line over detail, the wash reaching
+  148,78,64 / 109,75,69 (was 75,69,67 / 75,69,67). With the hairline drawn as an SVG stroke the same set scores
+  **2.87** (3.94 with a 1px inset shadow; the edge read refits to the same values). Still open: the sharp line over detail, the wash reaching
   deeper (Apple +9 at 20pt in, ours +2), and putting the margin into mcloud's two-layer player glass.
 
 **Chromium copy** (`buttons/glass-buttons.js` + `.css` + `lens.js`, demo `buttons/index.html`, `?scene=art` for a

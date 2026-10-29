@@ -34,7 +34,7 @@ Each step was measured against Apple's glass before it shipped in mcloud; the nu
 | 6. Exact bilinear sampling | 4 fixed displacement taps blended by static weights instead of nearest-pixel lookups; thin-line darkening; Music's shadow | Rim flicker 2.7% → 2.1% (Apple 2.2%), line width 0.50pt (Apple 0.50) |
 | 7. Round-end outline | Apple's dark hairline sits just **outside** the glass (fading as \|n_x\|³), and its outermost pixels mix in the page right under them | Left end over tiles 6.15 → 3.71, outer ring 24.7 → 8.8 |
 | 8. Side-by-side viewer | Your own Spotify page under macOS's glass and under mcloud's, one scroll | [See it side by side](#see-it-side-by-side) |
-| 9. Toolbar buttons | Recorded Music's Back / Share / More under scripted hover, press, hold and drag; found the AppKit/SwiftUI pieces (toolbar items drawn by `DesignLibrary`, `GlassInteractionFill`, FlexiGlass flags); rebuilt them for Chromium with the player's lens checked at button size, reading past the glass's edge as macOS does (`buttons/`) | Native 36pt glass = Music's Back to 0.51; lens fit 5.6 -> 4.15; press spring 0.265 s / 0.48 (copy 0.275 / 0.42) |
+| 9. Toolbar buttons | Recorded Music's Back / Share / More under scripted hover, press, hold and drag; found the AppKit/SwiftUI pieces (toolbar items drawn by `DesignLibrary`, `GlassInteractionFill`, FlexiGlass flags); rebuilt them for Chromium with the player's lens checked at button size, reading past the glass's edge as macOS does (`buttons/`) | Native 36pt glass = Music's Back to 0.51; lens + edge read + one-device-pixel hairline 5.6 -> 2.87; press spring 0.265 s / 0.48 (copy 0.275 / 0.42) |
 
 ![Apple Music, mcloud main and the research branch over the same page](research/compare/glass-music-old-bilinear.png)
 
