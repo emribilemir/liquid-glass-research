@@ -1,0 +1,28 @@
+move 330 120
+wait 300
+move 226 26 300
+wait 600
+down
+wait 600
+drag 246 26 400
+wait 500
+drag 426 26 1800
+wait 600
+drag 226 26 1000
+wait 500
+drag 226 300 1500
+wait 600
+drag 226 26 1000
+wait 500
+drag 150 26 600
+wait 600
+drag 226 26 600
+wait 300
+drag 300 26 40
+wait 700
+drag 226 26 40
+wait 700
+drag 600 400 300
+wait 700
+up
+wait 800

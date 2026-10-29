@@ -1,0 +1,20 @@
+move 800 120
+wait 300
+move 952 26 300
+wait 500
+down
+wait 900
+up
+wait 1200
+key esc
+wait 900
+move 916 26 200
+wait 400
+down
+wait 150
+up
+wait 1500
+key esc
+wait 900
+move 800 120 300
+wait 400

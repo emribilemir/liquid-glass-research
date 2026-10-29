@@ -1,0 +1,44 @@
+/* Apple Music's toolbar glass buttons for Chromium; behaviour in glass-buttons.js, numbers in research/RESEARCH.md
+   ("Toolbar glass buttons"). The glass itself is the player's fitted lens (lens.js sets each element's own
+   backdrop-filter); the blur below is only the fallback when lens.js is not loaded. */
+.lg-glass {
+  --lg-light: 0; --lg-glow: 0; --lg-px: 50%; --lg-py: 50%; --lg-t: none;
+  position: relative; display: inline-flex; height: 36px; border-radius: 18px; isolation: isolate;
+  transform: var(--lg-t); touch-action: none; user-select: none; -webkit-user-select: none;
+}
+/* The glass: grows with the press (glass-buttons.js sets its inset, plus the lens's margin of page around it, which
+   lens.js clips away with clip-path); lens.js sets its backdrop-filter. */
+.lg-glass-face {
+  position: absolute; inset: 0; border-radius: 999px; pointer-events: none;
+  -webkit-backdrop-filter: blur(1.5px) saturate(1.15) brightness(1.3); backdrop-filter: blur(1.5px) saturate(1.15) brightness(1.3);
+}
+/* Apple's hairline outside the round ends (macOS's 36pt glass, BtnLab): the page darkened to ~70% in the 1pt band just
+   outside the glass, fading as |n_x|^3 toward the top and bottom (mask stops at quarters of the 18px radius). An inset
+   shadow on a box 1px larger draws exactly that band; a 0.5px border would be rounded up to 1px and overlap the glass. */
+.lg-glass-rim {
+  position: absolute; inset: -1px; z-index: -1; border-radius: 999px; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, var(--lg-rim, .3));
+  -webkit-mask-image: linear-gradient(90deg, #000, #0000006c 4.5px, #00000020 9px, #00000004 13.5px, #0000 18px, #0000 calc(100% - 18px), #00000004 calc(100% - 13.5px), #00000020 calc(100% - 9px), #0000006c calc(100% - 4.5px), #000);
+          mask-image: linear-gradient(90deg, #000, #0000006c 4.5px, #00000020 9px, #00000004 13.5px, #0000 18px, #0000 calc(100% - 18px), #00000004 calc(100% - 13.5px), #00000020 calc(100% - 9px), #0000006c calc(100% - 4.5px), #000);
+}
+/* Pressed light across a group: flat within 17pt of the pointer, half at 35pt, 0.3 at 55pt (Music's capsule). */
+.lg-glass-face::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle 55px at var(--lg-px) var(--lg-py), rgba(255, 255, 255, var(--lg-glow)) 17px,
+    rgba(255, 255, 255, calc(var(--lg-glow) * .5)) 35px, rgba(255, 255, 255, calc(var(--lg-glow) * .3)) 55px);
+}
+.lg-seg {
+  position: relative; z-index: 1; width: 36px; height: 36px; padding: 0; border: 0; margin: 0; background: none;
+  color: rgba(255, 255, 255, .92); display: grid; place-items: center; cursor: default; outline: none;
+}
+.lg-seg > svg { position: relative; z-index: 1; width: 20px; height: 20px; }
+/* Hover/press light: the whole face of a single button, a circle (height - 6pt) under the segment in a group. */
+.lg-seg::before {
+  content: ""; position: absolute; inset: 0; border-radius: 18px; pointer-events: none;
+  background: rgba(255, 255, 255, var(--lg-light));
+}
+.lg-group .lg-seg { width: 36.5px; }
+.lg-group .lg-seg::before { inset: 3px; border-radius: 50%; }
+.lg-seg:focus-visible::before { box-shadow: 0 0 0 2px var(--lg-focus, rgba(10, 132, 255, .9)); }
+@media (prefers-reduced-motion: reduce) { .lg-glass, .lg-seg { transform: none !important; } .lg-glass-face { inset: 0 !important; } }
+@media (prefers-reduced-transparency: reduce) { .lg-glass-face { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: #4d4746; } }

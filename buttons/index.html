@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glass toolbar buttons</title>
+<link rel="stylesheet" href="glass-buttons.css">
+<style>
+  /* Apple Music's playlist page at its toolbar, in window points (980x600), so the buttons sit where Music's do:
+     Back centred at (226,26), Share + More capsule from x 897.75 to 970.75. ?scene=art puts colour behind them. */
+  html, body { margin: 0; background: #302b2a; color: #fff; font: 13px -apple-system, system-ui, sans-serif; }
+  .window { position: relative; width: 980px; height: 600px; overflow: hidden; background: #302b2a; }
+  .sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 200px; background: #332826; }
+  .art { position: absolute; left: 241px; top: -20px; width: 270px; height: 112px; border-radius: 0 0 10px 10px; background: #520a31; }
+  .toolbar { position: absolute; left: 200px; right: 0; top: 0; height: 52px; transition: backdrop-filter .1s; }
+  /* Music's title-bar band while the pointer is over the toolbar (the window's material, not the buttons'). */
+  .toolbar.band { -webkit-backdrop-filter: blur(12px) brightness(1.1); backdrop-filter: blur(12px) brightness(1.1); }
+  #back { position: absolute; left: 208px; top: 8px; }
+  #actions { position: absolute; left: 897.75px; top: 8px; }
+  .log { position: absolute; left: 220px; top: 140px; color: #aaa; }
+  body.scene-art .window { background: linear-gradient(115deg, #f05a28, #8a2be2 35%, #11998e 60%, #f9d423); }
+  body.scene-art .art { background: repeating-linear-gradient(90deg, #fff 0 2px, #111 2px 6px); }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="sidebar"></div>
+  <div class="art"></div>
+  <div class="toolbar"></div>
+  <div class="lg-glass" id="back" data-lg-zone=".toolbar">
+    <button class="lg-seg" aria-label="Back"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 6 10l6 6"/></svg></button>
+  </div>
+  <div class="lg-glass" id="actions" data-lg-zone=".toolbar">
+    <button class="lg-seg" aria-label="Share"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5v10M6.5 6 10 2.5 13.5 6M7 8.5H5.5v9h9v-9H13"/></svg></button>
+    <button class="lg-seg" aria-label="More"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
+  </div>
+  <div class="log" id="log"></div>
+</div>
+<script src="lens.js"></script>
+<script src="glass-buttons.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  if (q.get('scene') === 'art') document.body.classList.add('scene-art');
+  if (q.has('manual')) lgClock.manual();
+  const bar = document.querySelector('.toolbar');
+  addEventListener('pointermove', e => bar.classList.toggle('band', e.clientY < 52 && e.clientX >= 200 || e.buttons === 1 && bar.classList.contains('band')));
+  addEventListener('pointerup', e => bar.classList.toggle('band', e.clientY < 52 && e.clientX >= 200));
+  document.addEventListener('lg-activate', e => { document.getElementById('log').textContent = e.target.getAttribute('aria-label') + ' ' + new Date().toLocaleTimeString() });
+</script>
+</body>
+</html>

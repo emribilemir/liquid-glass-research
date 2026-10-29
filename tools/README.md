@@ -32,3 +32,26 @@ Motion: `ScrollLab` scrolls a tall 2x image under the glass one step per stdin l
 
 Window capture (`screencapture -l`) needs the Screen Recording permission for the terminal.
 
+Toolbar buttons (`buttons/`): `rec` records Apple Music's window at 60 fps with ScreenCaptureKit while it posts the
+mouse steps of a script (`scripts/*.txt`: `move x y [ms]`, `down`, `up`, `drag x y [ms]`, `wait ms`, `key esc`, window
+points); `REC_DISPLAY=1` records the display (Music's windows only) so menus show. `../buttons/verify.mjs` plays the
+same script against the Chromium copy. `geom.py`, `springfit.py`, `segs.py`, `compare.py`, `sheet.py`, `crops.py` and
+`sbs.py` read either recording. Music must stay on the same page (the scripts use its playlist toolbar).
+
+`BtnLab.swift` draws macOS's glass at button shapes (`circle:x,y,d`, `capsule:x,y,w,h`, top-left pt) over a 2x
+background, focused; `capb.sh` captures it like `cap2.sh`. `labcmp.py` compares a capture with Music's frame,
+`../buttons/fitlens.mjs` fits the Chromium lens to `../research/buttons/fit/lab/`, `fitview.py` and `rimprof.py` show
+where they differ.
+
+```sh
+swiftc -O -target arm64-apple-macosx26.0 buttons/BtnLab.swift -o buttons/BtnLab
+buttons/capb.sh out.png ../research/buttons/fit/bg/grid.png plain circle:78,8,36 capsule:140,8,73,36
+node ../buttons/fitlens.mjs eval '{}' renders/
+```
+
+```sh
+swiftc -O -target arm64-apple-macosx26.0 buttons/rec.swift -o buttons/rec
+buttons/rec buttons/scripts/flex-back.txt ../research/local/buttons/flex-back 130 0 240 110
+node ../buttons/verify.mjs buttons/scripts/flex-back.txt ../research/local/buttons/copy-flex-back 130 0 240 110
+python3 buttons/compare.py ../research/local/buttons/flex-back ../research/local/buttons/copy-flex-back 192 52
+```

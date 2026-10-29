@@ -565,9 +565,185 @@ The visible gap after bilinear sampling: over bright content, our round ends ste
   (left) and under the theme in Chrome (`dev/preview.html`, right), scrolled together over Chrome's DevTools protocol;
   the native window keeps focus so its glass stays in the focused look. `install.sh` does all of it.
 
+## Toolbar glass buttons: Back, Share, More (2026-10-29)
+
+How Music's toolbar buttons behave under the pointer (hover, press, hold, drag, release) and a Chromium copy of them
+(`buttons/`). Measured on a playlist page, Music focused, Liquid Glass slider at 0.
+
+**What they are.** Accessibility puts Back (`Go Back`), Share and More in Music's `AXToolbar`: they are ordinary
+`NSToolbar` button items, not Music's own views. On macOS 26+ AppKit draws such buttons with SwiftUI; `heap` on the
+running Music lists `DesignLibrary.MacToolbarButton<… AppKit.ButtonContent …>` (8), `DesignLibrary.MacToolbarPopUpButton`
+(4, More), `DesignLibrary.MacGlassButton<AppKit.ButtonContent, AppKit.AppKitButton.OptionallyTintedModifier>`,
+`DesignLibrary.MacButtonGlassForegroundStyle`, glass from `NSGlassEffectContainerView` (`GlassGroup`, `GlassViewState`:
+adjacent items share one glass, which is why Share and More are one capsule) with `NSGlassEffectView`s, and the
+interaction pieces `AppKit.GlassInteractionFill` (8), `SwiftUI.FlexInteractionGestureStateWriteModifier` (4),
+`SwiftUI.OnGlassInteractionStateChangeWriteModifier` (4), `SwiftUI._HoverRegionModifier`. The in-page buttons
+(shuffle, Play, +) are `MusicUI.ActionButton<Image>` with `MusicUI.TopToolbarButtonStyle`, not glass.
+Strings from the frameworks (`tools/sections.swift` on AppKit, SwiftUI, DesignLibrary, MusicUI):
+
+- AppKit: class `AppKit.FlexiGlass`; defaults `_NSEnableFlexiglass`, `NSGlassEffectViewEnableDefaultInteractivity`,
+  `NSGlassEffectContainerViewAutomaticallySplitsGroups`, `NSMenuDisableFlexiglassForKeynote`; fields of the glass view
+  state `isInteractive`, `interactionState`, `flexInteractionVariant`, `flexInteractionSources`, `_flexGestureState`.
+- SwiftUI feature flags (`/System/Library/FeatureFlags/Domain/SwiftUI.plist`): `flexiGlassMacOS` and
+  `flexiGlassMacOSPointer`, both `FeatureComplete` (on). "FlexiGlass" is the pointer-driven glass behaviour below.
+- DesignLibrary: glass recipes `RegularRecipe`, `MenuRecipe`, `SidebarRecipe`, `IdentityRecipe`; per-control fields
+  `buttonInteractionState`, `segmentInteractionState`, `pressedSegmentState`, `__flexState`, `_controlContentLensing`,
+  `useLowProminenceOnStateInToolbar`, springs (`lowSpring`, `midSpring`, `highSpring`).
+
+The public way to get the same in an app is the toolbar itself (`NSToolbar` items / SwiftUI `.toolbar`), or
+`.glassEffect(.regular.interactive())`, `.buttonStyle(.glass)`, `NSButton.bezelStyle = .glass` for loose buttons;
+whether those move exactly like the toolbar items has not been checked yet.
+
+**Method.** `tools/buttons/rec` posts mouse events (CGEvent, HID tap) from a step script while ScreenCaptureKit records
+Music's window at 60 fps, cursor hidden, cropped (`REC_DISPLAY=1` records the display so menus show); every frame
+and event gets a host-clock time. `geom.py` tracks the outline (strongest brightness step along the centre row and
+column, sub-pixel), `springfit.py` fits SwiftUI's `spring(response, dampingFraction)`, `segs.py` reads the light per
+segment, `compare.py` lines up the settled state before every step of two recordings. Scripts are in
+`tools/buttons/scripts/`; frames in `research/local/buttons/` (not in git). All sizes below are device pixels at 2x
+unless they say pt.
+
+**Shape at rest.** Back: a 36pt circle centred at (226, 26) in the window. Share + More: one 73x36pt capsule
+(x 897.75-970.75); the AX frames are larger (Back 40x52, Share 36x52, More 41x52) because the hit area spans the
+toolbar's height. Over Music's toolbar (page 48,43,42) the glass reads 77,68,69: about 13% white. A ~1.5px light line
+runs along the top and bottom (+44, +29, +9 over the fill at the outermost three pixels, at 90 deg), fading toward the
+sides; just outside the round sides there is a dark hairline (~ -25 against the page) that disappears at the top and
+bottom, like the player's ends. No drop shadow.
+
+**Hover.** Single button: the whole face lifts by +20 (luminance), fading in and out in ~0.1s, constant wherever the
+pointer is on it (no light that follows the pointer). Group: a circle of the capsule's height minus 6pt (30pt) under
+the hovered segment, +18, and it switches between segments **between two frames**, no slide and no fade. Entering
+the toolbar also shows Music's title-bar band behind the buttons (+5 on the glass's backdrop); that is the window,
+not the button.
+
+**Press.** The glass grows by ~2.2pt on its long axis, uniformly: Back 71.8 -> 76.4px (x1.064), the capsule
+145.8 -> 150.3px (x1.031), so `scale = 1 + 2.2pt / max(w, h)`. It overshoots to +2.7pt and settles:
+
+| motion | response | dampingFraction | fit rms |
+| --- | --- | --- | --- |
+| press, Back | 0.265 s | 0.48 | 0.23px |
+| press, capsule | 0.265 s | 0.48 | 0.27px |
+| release, Back | 0.12 s (+35ms) | 0.78 | 0.07px |
+| release, capsule | 0.21 s | 0.69 | 0.14px |
+
+Light while pressed: a single button gains another +20 evenly (critically damped, ~0.25s). In the capsule the hover
+circle stays on the pressed segment and a glow spreads from the pointer: +21 within ~17pt of it, +11 at the other
+segment's centre (35pt), +7 at ~55pt; drag onto the neighbour and that segment's circle pops on while the glow moves
+with the pointer (Share 29 / More 39).
+
+**Hold and drag.** The pressed size holds as long as the button is held, wherever the pointer goes; letting go
+outside cancels (no action), letting go inside acts. Dragged away, the light falls off with distance from the glass
+(2pt out: 63% of the pressed light; 56pt: ~20%); held far away its level also depends on whether the window's toolbar
+still counts as hovered (Music's band), between rest and hover. **The "flex" is tiny here:** dragging 200pt to the
+right moves the right edge out by 0.3pt and the centre by 0.2pt, 274pt down adds 0.3pt at the bottom; fast 60pt
+flicks change nothing visible. So on macOS toolbar buttons FlexiGlass is a sub-point lean toward the pointer, not the
+jelly stretch of iOS.
+
+**Menus.** More opens its menu on mouse **up** (~0.12s later, no fade-in; closes with a ~0.15s fade). Share opens
+the share popover ~0.67s after mouse up, growing out of the button over ~0.17s; closes in ~0.14s. Menus and
+popovers are separate windows (`REC_DISPLAY=1`).
+
+**The glass at button size.** The first copy faked the glass in CSS (white fill, inset lines); that was wrong: the
+buttons need the measured lens like the player, checked at their own size. `tools/buttons/BtnLab.swift` draws
+macOS's glass at given shapes over a 2x background, focused (`capb.sh` keeps only shots taken while key).
+- **Reference confirmed:** over Music's own backdrop around Back (`research/buttons/back-bg.png`: the page column by
+  column from Music's frame, with the purple block's edge 3.5pt inside the button's right rim), a SwiftUI
+  `.glassEffect(.regular, in: Circle())` 36pt at the same spot differs from Music's frame by **0.51** inside (glyph
+  masked), 1.24 at the rim, 0.93 just outside (`labcmp.py`). `.interactive()` and a `GlassEffectContainer` are the
+  same when static; `.buttonStyle(.glass)` is a different, lighter look (9.2 / 25). So the lab glass is the reference
+  at button size, as Lab3 was for the player.
+- **Lens curve:** 1pt line probes across the 36pt circle (`research/local/buttons/probe`): at the centre row nothing
+  from the outer ~6pt of the page shows; displayed 0.25 / 0.75 / 1.25 / 2.25 / 3.25pt from the edge show the page
+  at 14.4 / 11.5 / 10.5 / 8.5 / 7.5pt, then a fold at ~5pt and near identity inside 7pt. The player's lens curve
+  scaled by the radius (`A = 1.01 r`, `L = 0.495 r`, r = 18pt) gives 13.9 / 10.7 / 8.9 / 6.1 / 4.1 shifted by the
+  same amounts: the curve is the same at both sizes.
+- **Tone:** over flat greys the button reads 0 -> 31.6, 32 -> 61.6, 64 -> 88.5, 96 -> 112.3, 128 -> 132.9,
+  160 -> 150.2, 192 -> 164.3, 224 -> 175.4, 255 -> 183.0 (within 4 of the player's table; stored as
+  `research/buttons/tone.json`, 33 entries by PCHIP). Colour gains more than on the player: purple 82,10,49 ->
+  125,36,84, blue 40,90,220 -> 51,109,255, so `gain` fits to ~1.15 (player 1.05).
+- **Rim:** on flat pages the light line is only along the top and bottom, as on the player (90 deg: 123 vs 123 over
+  grey 64), symmetric; the bright spot seen at a red circle's upper left is page content (a light line) bent by the
+  lens, not a specular. The dark hairline lies in the 1pt band right outside the glass (~70% of the page at the
+  ends, fading toward the top and bottom). A 0.5px CSS border is rounded up to 1px by Chromium and overlapped the
+  glass; an inset shadow on a box 1px larger draws the band exactly.
+- **Fit** (`buttons/fitlens.mjs`, the lens of `buttons/lens.js` against `research/buttons/fit/lab/`, 41 patterns
+  cropped from the player's fit set plus flat greys and colours; error inside each shape and 3px around it):
+  the player's parameters score 5.61; the exact (4-tap) bend and the hairline in the right band 4.77; on a
+  16-pattern set, the measured tone 5.19 and a fit of the rest 4.09 (`research/buttons/params-fit1.json`,
+  `fit1.log`): `lensA` 1.01 and `lensH` 0.497 stay (the curve above), `gain` 1.15, `darken` 1.19 over a 15px
+  blur (thin bright detail dims more at this size), `pre` 0.37, highlight x0.85 with exponent 4.1. **Not yet in the
+  copy**, which still uses the player's values for these.
+
+**Reading past the edge.** Over Music's page the capsule's left end showed a thin red line where ours showed none:
+macOS's glass reads the page **outside** its shape, a backdrop-filter only what is under its own box. Probes
+(BtnLab, capsule over grey 64, red everywhere left of a line `e` pt outside its left end; red excess R-G on the
+centre row, device px from the edge, `research/buttons/fit/*/out-red-*.png`):
+
+| red from | edge px 0, 1 | 2 | 1-7pt inside |
+| --- | --- | --- | --- |
+| 0pt outside | 136*, 149 | 66 | 23 -> 17 |
+| 1pt | 147 | 63 | 22 -> 16 |
+| 4pt | 141 | 56 | 16 -> 12 |
+| 8pt | 118 | 41 | 11 -> 8 |
+| 16pt | 0 | 0 | 0 |
+
+\* the pixel the edge cuts. A 1pt red line at the same distances barely shows (+2..+7): it is a blur, not a mirror.
+Two parts: the outermost ~2 device px show the page ~10pt beyond the edge, blurred (weight ~0.6 then ~0.25), and
+the whole glass mixes in a little (~+20 next to the red, fading inward and with distance) of a wide blur of the page
+around it; nothing from 16pt out. The same holds for the blue page right of the capsule and green above both.
+
+The copy now gives the lens a margin: the face element is 12pt larger than the glass on every side, `clip-path:
+inset(12px round 999px)` shows only the glass, and the filter (`lens.js`, `state.margin`) adds two steps after the
+bend: an outward read (`outerDist` along the outward normal, `outerBlur`, weight `outerMix` fading over `outerW`
+device px; it replaces `pageMix`, and `outerEnd` of it where the edge faces sideways) and a wash. Findings while
+fitting it:
+
+- The read has to come **after** the darken halo, which otherwise pulls the read page back toward the glass's grey
+  (weight 1 gave only 117 of Apple's 148), and before the tone.
+- The wash is **colour only**: with bright green above the glass its luminance inside does not move (-1) while its
+  hue shifts; a blur mixed in whole washed out the checker inside. It is the blur's chroma (R-L, G-L, B-L) added.
+- **The player does the same, in the same points:** Lab3 (701x54 at 40,40) over the same probes reads, left end red
+  1 / 4 / 8pt out 148,64 / 142,57 / 119,41, right end blue 97 / 94 / 80, top edge green 96,36 / 93,32 / 79,23, 16pt
+  out nothing (`research/buttons/player-out/`, `tools/buttons/playerout.py`). So the distance does not scale with the
+  radius; the round ends read ~0.75 of the straight edges. mcloud's player filter reads 0 everywhere.
+- Fitted alone to the player probes (`outerMix` 1, `outerEnd` 0.75, `outerW` 1.9, `outerDist` 11.5, `outerBlur` 3)
+  it matches them (left 143,50, right 101, top 91,34) but worsens the checker and grid (button set 4.39 -> 4.7):
+  over fine detail Apple's edge is a thin, sharp dark line, which a blurred read smears. The joint fit
+  (`research/buttons/params-outer.json`: `outerMix` 0.68, `outerEnd` 0.75, `outerW` 2.09, `washMix` 0.085 over
+  10px) takes 4.89 (no margin) to **4.15** on the 15-pattern set and reaches ~77% of the probes' edge (left end
+  114,48 at 1pt); on the scene, Apple's red line at the capsule's left end is 156,76,63 / 104,72,66 and ours
+  148,78,64 / 109,75,69 (was 75,69,67 / 75,69,67). Still open: the sharp line over detail, the wash reaching
+  deeper (Apple +9 at 20pt in, ours +2), and putting the margin into mcloud's two-layer player glass.
+
+**Chromium copy** (`buttons/glass-buttons.js` + `.css` + `lens.js`, demo `buttons/index.html`, `?scene=art` for a
+colourful page): the glass is the player's lens (`lens.js`, mcloud's `glassFilter`/`glassLens` unchanged except for
+fractional sizes) on its own face element, with the button-size parameters above; pressing resizes the face so the
+lens is redrawn at the new size (scaling a backdrop-filter resamples it and blurs the rim). Springs are integrated
+per element only while moving; per-element CSS variables for transform, segment light and
+pointer glow; `.lg-glass` holds one `.lg-seg` (single button) or several (group). `buttons/verify.mjs` plays the same
+step scripts in Chrome at 2x on a virtual clock and writes frames in rec's format, so the same scripts measure both.
+Copy vs Music, settled states (`compare.py`, `segs.py`):
+
+| state | Music | copy |
+| --- | --- | --- |
+| Back rest / pressed width x height | 71.8x72.1 / 76.4x76.8 | 72.0x72.1 / 76.2x76.3 |
+| Back light rest / pressed / dragged 2pt out | 70.1 / 115.6 / 108.2 | 73.1 / 119.3 / 111.3 |
+| Back press spring / release spring | 0.265, 0.48 / 0.12, 0.78 | 0.275, 0.42 / 0.14, 0.79 |
+| Capsule rest / pressed width | 145.8 / 150.3 | 146.3 / 150.6 |
+| Share hover | +17.7 | +17.5 |
+| Share pressed: Share, More | +38.8, +11.4 | +38.5, +11.3 |
+| pressed Share, pointer on More: Share, More | +29.3, +38.6 | +27.9, +38.3 |
+
+Measured with the lens glass and the edge read (light: luminance inside the left part of the button). Side by side:
+`compare/buttons-states.png`, `compare/buttons-press-share.mp4`, `compare/buttons-flex-back.mp4`.
+
+Not matched yet: the light while held far outside (Music keeps hover-level light in some places, the copy uses a
+toolbar zone); glyphs are approximations of SF Symbols; menus are not copied.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
   was compared with the lab's `NSGlassView` (proven equal to Music's player over the same background) rather than
   with Music scrolling. A recording of Music scrolling by hand would close that gap.
 - The highlight table and the dark/bright edge shading are fitted on a dark page; light pages are less covered.
+- Toolbar buttons: do `.glassEffect(.regular.interactive())`, `.buttonStyle(.glass)` and `NSButton` `.glass` move like
+  Music's toolbar items? A lab app with the same step scripts (`tools/buttons/rec` needs a bundle id switch) would tell.
