@@ -14,16 +14,18 @@
 }
 /* Apple's hairline outside the round ends (macOS's 36pt glass, BtnLab): the page at ~0.4 in the one device pixel just
    outside the glass, fading as |n_x|^3 toward the top and bottom (mask stops at quarters of the 18px radius). lens.js's
-   lgRim() draws it as an SVG stroke in this 1px larger box. */
+   lgRim() draws it as an SVG stroke in this 1px larger box, over the glass. */
 .lg-glass-rim {
-  position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); z-index: -1; pointer-events: none; overflow: visible;
+  position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); z-index: 0; pointer-events: none; overflow: visible;
   stroke: #000; stroke-opacity: var(--lg-rim, .55);
   -webkit-mask-image: linear-gradient(90deg, #000, #0000006c 5.5px, #00000020 10px, #00000004 14.5px, #0000 19px, #0000 calc(100% - 19px), #00000004 calc(100% - 14.5px), #00000020 calc(100% - 10px), #0000006c calc(100% - 5.5px), #000);
           mask-image: linear-gradient(90deg, #000, #0000006c 5.5px, #00000020 10px, #00000004 14.5px, #0000 19px, #0000 calc(100% - 19px), #00000004 calc(100% - 14.5px), #00000020 calc(100% - 10px), #0000006c calc(100% - 5.5px), #000);
 }
+/* lgRimF's element: the shape grown by 1px, over the glass. */
+.lg-glass-rimf { position: absolute; inset: -1px; z-index: 0; pointer-events: none; }
 /* Pressed light across a group: flat within 17pt of the pointer, half at 35pt, 0.3 at 55pt (Music's capsule). */
 .lg-glass-face::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0; clip-path: inset(var(--lg-m, 0px) round 999px);
   background: radial-gradient(circle 55px at var(--lg-px) var(--lg-py), rgba(255, 255, 255, var(--lg-glow)) 17px,
     rgba(255, 255, 255, calc(var(--lg-glow) * .5)) 35px, rgba(255, 255, 255, calc(var(--lg-glow) * .3)) 55px);
 }

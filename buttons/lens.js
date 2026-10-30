@@ -28,7 +28,9 @@
   // The tone is stored as the offset to add at each luminance, (out-in+1)/2, so colours move with their luminance
   // instead of each channel on its own curve.
   // part: 'bend' (the page bent at the rim), 'face' (the rest, reading the bent page as its backdrop, with the rim
-  // darkening) or 'all' (one filter without the rim steps, which would multiply its cost: the toast). exact: the
+  // darkening) or 'all' (one filter without the rim steps, which would multiply its cost: the toast). The buttons split
+  // 'face' further: 'mid' (thin lines, darken halo, edge read) and 'tone' (colour and highlight, which read their input
+  // several times: as a filter's own backdrop that input is a texture, not a chain recomputed per reader). exact: the
   // bend samples bilinearly (4 taps); otherwise one tap, and the face blurs where the bend magnifies.
   const glassFilter=(id,state,part,exact)=>{
     const tone=`type="table" tableValues="${state.tone.map((t,k)=>((t/255-state.gain*k/32+1)/2).toFixed(4)).join(' ')}"`,img=name=>`<feImage result="${name}" preserveAspectRatio="none"/>`;
@@ -43,9 +45,11 @@
     // backdrop-filter the size of the glass never sees past its edge.
     // They come after the darken halo (which would pull the read page toward the glass's grey) and before the tone.
     const outer=state.margin?`${map('ox','oy','om')}<feGaussianBlur in="SourceGraphic" stdDeviation="${state.outerBlur}" edgeMode="none" result="ob"/><feDisplacementMap in="ob" in2="om" xChannelSelector="R" yChannelSelector="B" result="out"/>${img('me')}<feComposite in="out" in2="me" operator="in" result="oe"/><feComposite in="oe" in2="glass" operator="over" result="glass"/>`
-      // The wash tints the glass with the colour of a wide blur of the page around it, without its luminance (a green page
-      // above the glass leaves its brightness unchanged): the blur's chroma, R-L, G-L, B-L, added at washMix.
-      +`<feGaussianBlur in="SourceGraphic" stdDeviation="${state.washBlur}" edgeMode="none" result="wb"/><feColorMatrix in="wb" values=".7874 -.7152 -.0722 0 .5 -.2126 .2848 -.0722 0 .5 -.2126 -.7152 .9278 0 .5 0 0 0 1 0" result="wc"/><feComposite in="glass" in2="wc" operator="arithmetic" k2="1" k3="${state.washMix}" k4="${(-state.washMix/2).toFixed(4)}" result="glass"/>`:'';
+      // The wash tints the glass with the colour of the page around it, without its luminance (a green page above the
+      // glass leaves its brightness unchanged) and only where that colour differs from the page under it (on a flat
+      // colour Apple's glass adds nothing): the chroma (R-L, G-L, B-L) of a wide blur minus that of the bent page,
+      // added at washMix (washLocal scales the subtracted part: 0 is the plain chroma of the blur).
+      +`<feGaussianBlur in="SourceGraphic" stdDeviation="${state.washBlur}" edgeMode="none" result="wb"/><feColorMatrix in="wb" values=".7874 -.7152 -.0722 0 .5 -.2126 .2848 -.0722 0 .5 -.2126 -.7152 .9278 0 .5 0 0 0 1 0" result="wc"/><feColorMatrix in="core" values=".7874 -.7152 -.0722 0 .5 -.2126 .2848 -.0722 0 .5 -.2126 -.7152 .9278 0 .5 0 0 0 1 0" result="cc"/><feComposite in="wc" in2="cc" operator="arithmetic" k2="1" k3="${-(state.washLocal??1)}" k4="${((state.washLocal??1)/2).toFixed(4)}" result="wd"/><feComposite in="glass" in2="wd" operator="arithmetic" k2="1" k3="${state.washMix}" k4="${(-state.washMix/2).toFixed(4)}" result="glass"/>`:'';
     // Rim smoothing along the edge normal: a vertical and a sideways blur, each mixed in through its mask's alpha.
     const smooth=`${img('mv')}${img('mz')}<feGaussianBlur in="SourceGraphic" stdDeviation="0 ${state.smooth}" edgeMode="duplicate" result="bv"/><feGaussianBlur in="SourceGraphic" stdDeviation="${state.smooth} 0" edgeMode="duplicate" result="bz"/><feComposite in="bv" in2="mv" operator="in" result="sv"/><feComposite in="bz" in2="mz" operator="in" result="sz"/><feComposite in="sv" in2="SourceGraphic" operator="over" result="s1"/><feComposite in="sz" in2="s1" operator="over" result="core"/>`;
     // Thin bright detail dims (a min with a 1px blur, mixed in): Apple's 1pt lines carry ~75% of ours, flat colour is equal.
@@ -53,8 +57,19 @@
     const darken=`<feGaussianBlur in="core" stdDeviation="${state.darkenBlur}" edgeMode="duplicate" result="halo"/><feBlend in="core" in2="halo" mode="darken" result="dk"/><feComposite in="core" in2="dk" operator="arithmetic" k2="${(1-state.darken).toFixed(2)}" k3="${state.darken}" result="glass"/>`
       +(part==='face'?`${img('md')}<feComposite in="dk" in2="md" operator="in" result="rd"/><feComposite in="rd" in2="glass" operator="over" result="glass"/>`:'');
     const peakHighlight=state.highlight[0];
-    const face=`${img('mh')}${img('ml')}<feColorMatrix in="glass" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0"/><feComponentTransfer result="tone"><feFuncR ${tone}/><feFuncG ${tone}/><feFuncB ${tone}/></feComponentTransfer><feComposite in="glass" in2="tone" operator="arithmetic" k2="${state.gain}" k3="2" k4="-1"/><feComposite in2="mh" operator="arithmetic" k1="${-peakHighlight}" k2="1" k3="${(state.highlightTo*peakHighlight).toFixed(4)}"/><feBlend in2="ml" mode="multiply"/>`;
-    return `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">${part==='bend'?bend:part==='face'?(exact?thin('SourceGraphic'):smooth+thin('core'))+darken+face:bend+darken+outer+face}</filter>`;
+    // gainL (buttons): the colour gain by luminance, a table like tone (macOS's glass boosts dark colours more: purple
+    // 1.25, red 1.17, orange 1.04): out = tone(L) + (in - L) * gainL(L), as (in + 2*tone1 - 1) + chroma*(gainL - 1).
+    const tone1=state.gainL&&`type="table" tableValues="${state.tone.map((t,k)=>((t/255-k/32+1)/2).toFixed(4)).join(' ')}"`,gl=state.gainL&&`type="table" tableValues="${state.gainL.map(g=>Math.min(1,Math.max(0,(g-1)*2)).toFixed(4)).join(' ')}"`;
+    const colour=state.gainL?`<feColorMatrix in="glass" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0" result="lum"/><feComponentTransfer in="lum" result="tone"><feFuncR ${tone1}/><feFuncG ${tone1}/><feFuncB ${tone1}/></feComponentTransfer><feComponentTransfer in="lum" result="gl"><feFuncR ${gl}/><feFuncG ${gl}/><feFuncB ${gl}/></feComponentTransfer><feComposite in="glass" in2="lum" operator="arithmetic" k2="1" k3="-1" k4=".5" result="chroma"/><feComposite in="chroma" in2="gl" operator="arithmetic" k1=".5" k3="-.25" k4=".5" result="boost"/><feComposite in="glass" in2="tone" operator="arithmetic" k2="1" k3="2" k4="-1" result="toned"/><feComposite in="toned" in2="boost" operator="arithmetic" k2="1" k3="1" k4="-.5"/>`
+      :`<feColorMatrix in="glass" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0"/><feComponentTransfer result="tone"><feFuncR ${tone}/><feFuncG ${tone}/><feFuncB ${tone}/></feComponentTransfer><feComposite in="glass" in2="tone" operator="arithmetic" k2="${state.gain}" k3="2" k4="-1"/>`;
+    // hlHue: the highlight raises the luminance as it does on grey (L + peak*mh*(highlightTo - L)) but keeps the hue,
+    // scaling the three channels alike (Music's player: orange edge 255,176,65 where mixing toward white gave
+    // 255,180,99): out = c * (1 + peak*mh*(highlightTo - L)/L), the ratio from a table on L capped at hlCap.
+    const hlCap=16,hlRatio=`type="table" tableValues="${Array.from({length:65},(_,k)=>{const L=Math.max(k/64,1e-3);return Math.min(1,(state.highlightTo-L)/L/hlCap).toFixed(4);}).join(' ')}"`;
+    const highlight=state.hlHue?`<feMerge result="tn"><feMergeNode/></feMerge><feColorMatrix in="tn" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0" result="hll"/><feComponentTransfer in="hll" result="hlt"><feFuncR ${hlRatio}/><feFuncG ${hlRatio}/><feFuncB ${hlRatio}/></feComponentTransfer><feComposite in="hlt" in2="mh" operator="arithmetic" k1="1" result="hlf"/><feComposite in="tn" in2="hlf" operator="arithmetic" k1="${(hlCap*peakHighlight).toFixed(4)}" k2="1"/>`
+      :`<feComposite in2="mh" operator="arithmetic" k1="${state.hlK1??-peakHighlight}" k2="1" k3="${state.hlK3??(state.highlightTo*peakHighlight).toFixed(4)}"/>`;
+    const face=`${img('mh')}${img('ml')}${colour}${highlight}<feBlend in2="ml" mode="multiply"/>`;
+    return `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">${part==='bend'?bend:part==='face'?(exact?thin('SourceGraphic'):smooth+thin('core'))+darken+outer+face:part==='mid'?(exact?thin('SourceGraphic'):smooth+thin('core'))+darken+outer+'<feMerge><feMergeNode in="glass"/></feMerge>':part==='tone'?'<feMerge result="glass"><feMergeNode in="SourceGraphic"/></feMerge>'+face:bend+darken+outer+face}</filter>`;
   };
   // The sidebar glow (user.css) saturates and brightens hard so that small covers reach its edge; this soft
   // ceiling keeps large coloured areas, such as playlist headers under the sidebar, from blowing out.
@@ -111,22 +126,61 @@
   }
   // lgRim(box): Apple's hairline, the page at ~0.4 in the one device pixel just outside the glass (BtnLab: grey 64 ->
   // 26, 192 -> 99), strongest at the round ends (CSS mask on .lg-glass-rim). An SVG stroke of 1/dpr along the shape
-  // grown by half that: Chromium drops sub-pixel box-shadow spreads and rounds thin borders up to 1px.
+  // grown by half that: Chromium drops sub-pixel box-shadow spreads and rounds thin borders up to 1px. It goes over
+  // the glass (after it, z-index 0): under it, the glass's antialiased edge covered the line unevenly row to row.
   window.lgRim=box=>{
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),rect=document.createElementNS(ns,'rect');
-    svg.setAttribute('class','lg-glass-rim');svg.setAttribute('aria-hidden','true');rect.setAttribute('fill','none');svg.append(rect);box.prepend(svg);
-    const fit=()=>{const {width:w,height:h}=svg.getBoundingClientRect(),t=1/(devicePixelRatio||1),pad=1;if(!w)return;
-      rect.setAttribute('x',pad-t/2);rect.setAttribute('y',pad-t/2);rect.setAttribute('width',w-2*pad+t);rect.setAttribute('height',h-2*pad+t);rect.setAttribute('rx',(h-2*pad+t)/2);rect.setAttribute('stroke-width',t);};
+    svg.setAttribute('class','lg-glass-rim');svg.setAttribute('aria-hidden','true');rect.setAttribute('fill','none');svg.append(rect);box.append(svg);
+    // --lg-rim-w: the stroke's width and --lg-rim-o its centre's distance outside the glass, both in device pixels.
+    const fit=()=>{const {width:w,height:h}=svg.getBoundingClientRect(),k=devicePixelRatio||1,cs=getComputedStyle(svg),pad=1;if(!w)return;
+      const t=(parseFloat(cs.getPropertyValue('--lg-rim-w'))||1)/k,o=(parseFloat(cs.getPropertyValue('--lg-rim-o'))||.5)/k;
+      rect.setAttribute('x',pad-o);rect.setAttribute('y',pad-o);rect.setAttribute('width',w-2*pad+2*o);rect.setAttribute('height',h-2*pad+2*o);rect.setAttribute('rx',(h-2*pad+2*o)/2);rect.setAttribute('stroke-width',t);};
     if(typeof ResizeObserver==='function')new ResizeObserver(fit).observe(svg);fit();return svg;
+  };
+  // The toolbar buttons' glass (research/RESEARCH.md, "Toolbar glass buttons"): fitted to BtnLab's 36pt and 73pt glass
+  // with the tone and colour gain by luminance measured on flat colours, the page read past the edge, a hue-keeping
+  // highlight (research/buttons/params-button.json).
+  glassStates.button={...glassStates.focused,pre:0.35,darken:0.7984,darkenBlur:15.2999,lensA:1.01,lensH:0.497,highlightPow:4.091,highlight:[0.1105,0.07225,0.0272,0.01615,0.0119,0.00935,0.00765,0.00595,0.00425,0.0034,0.00255,0.0017,0.00085,0.00042,0.0],tone:[31.6,39.3,46.9,54.3,61.5,68.5,75.3,81.9,88.3,94.5,100.6,106.4,112,117.4,122.7,127.7,132.6,137.2,141.6,145.9,149.9,153.7,157.4,160.8,164,167.1,170,172.7,175.2,177.4,179.5,181.4,183],gainL:[1.2962,1.2833,1.2705,1.2576,1.2447,1.2319,1.219,1.2062,1.1933,1.1805,1.1676,1.1547,1.1419,1.129,1.1162,1.1033,1.0905,1.0776,1.0647,1.0519,1.039,1.0262,1.0133,1.0005,1,1,1,1,1,1,1,1,1],margin:12,outerDist:11.5,outerBlur:3,outerMix:0.7234,outerEnd:0.75,outerW:2.091,washBlur:10,washMix:0.0697,washLocal:1.0427,hlHue:true,pageMix:0};
+  // For player.mjs, which builds mcloud's two-layer player glass from these same functions.
+  window.lgGlassInternals={glassFilter,glassLens,glassStates,svg:glass};
+  // lgRimF(box, {w, s}): the hairline as macOS draws it, from the page under it: the luminance through a table
+  // measured on flat greys (BtnLab: 128 -> 68, 255 -> 123) and ~0.8 of the colour around it kept (pink 230,120,170 ->
+  // 166,60,104), so the line takes the page's hue instead of greying it. A backdrop-filter on the shape grown by 1px,
+  // its weight a map of the 1-device-pixel band outside the glass (4x4 samples per pixel) fading as (1 - x/r)^3 from
+  // each end; over the glass. w: the line's strength (1 at 36pt, lighter on the player).
+  const rimT=[0.0, 0.0098, 0.0208, 0.0326, 0.0453, 0.0591, 0.0743, 0.0904, 0.1069, 0.1238, 0.1412, 0.1595, 0.1787, 0.1996, 0.2221, 0.245, 0.2669, 0.288, 0.3089, 0.3286, 0.3462, 0.3612, 0.3747, 0.3873, 0.3996, 0.412, 0.4242, 0.4359, 0.4467, 0.4567, 0.4662, 0.475, 0.4831];let rimN=0;
+  window.lgRimF=(box,{w=1,s=.8}={})=>{
+    const id='lg-rimf-'+(++rimN),el=document.createElement('div');el.className='lg-glass-rimf';box.append(el);
+    const tt=`type="table" tableValues="${rimT.join(' ')}"`;
+    glass.insertAdjacentHTML('beforeend',`<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0" result="rl"/><feComponentTransfer in="rl" result="rt"><feFuncR ${tt}/><feFuncG ${tt}/><feFuncB ${tt}/></feComponentTransfer><feComposite in="SourceGraphic" in2="rl" operator="arithmetic" k2="1" k3="-1" k4=".5" result="rc"/><feComposite in="rt" in2="rc" operator="arithmetic" k2="1" k3="${s}" k4="${(-s/2).toFixed(3)}" result="rd"/><feImage result="rm" preserveAspectRatio="none"/><feComposite in="rd" in2="rm" operator="in" result="rdm"/><feComposite in="rdm" in2="SourceGraphic" operator="over"/></filter>`);
+    if(!glass.isConnected)document.body.append(glass);
+    el.style.backdropFilter=el.style.webkitBackdropFilter=`url(#${id})`;
+    const map=glass.querySelector(`#${id} feImage`);let size='';
+    const draw=()=>{const {width:bw,height:bh}=el.getBoundingClientRect(),k=devicePixelRatio||1;if(!bw||size===bw+'x'+bh+'@'+k)return;size=bw+'x'+bh+'@'+k;
+      const W=Math.round(bw*k),H=Math.round(bh*k),gw=bw-2,gh=bh-2,r=gh/2,c=document.createElement('canvas');c.width=W;c.height=H;
+      const ctx=c.getContext('2d'),img=ctx.createImageData(W,H),dd=img.data;
+      for(let y=0;y<H;y++)for(let x=0;x<W;x++){let cov=0;
+        for(let sy=0;sy<4;sy++)for(let sx=0;sx<4;sx++){const px=(x+(sx+.5)/4)/k-1,py=(y+(sy+.5)/4)/k-1,cx=Math.min(gw-r,Math.max(r,px)),d=(Math.hypot(px-cx,py-r)-r)*k;if(d>=0&&d<1)cov++;}
+        const px=(x+.5)/k-1,fade=Math.max(0,1-Math.min(px,gw-px)/r)**3,i=(y*W+x)*4;dd[i]=dd[i+1]=dd[i+2]=255;dd[i+3]=Math.round(255*Math.min(1,w*cov/16*fade));}
+      ctx.putImageData(img,0,0);map.setAttribute('href',c.toDataURL());map.setAttribute('width',bw);map.setAttribute('height',bh);};
+    if(typeof ResizeObserver==='function')new ResizeObserver(draw).observe(el);draw();return el;
   };
   let n=0;
   // over: overrides of glassStates.focused (fitlens.mjs fits them at button sizes).
+  // node: the glass's box grown by state.margin; it gets three layers, each a backdrop-filter clipped to the glass
+  // (bend, mid, tone), as siblings so each reads the one before as a texture. The node itself must not clip or filter
+  // (that would make it the layers' backdrop root).
   window.lgLens=(node,over)=>{
-    const state={...glassStates.focused,...over},id='lg-lens-'+(++n);if(state.margin)node.style.clipPath=`inset(${state.margin}px round 999px)`;glass.insertAdjacentHTML('beforeend',glassFilter(id,state,'all',Number.isInteger(devicePixelRatio||1)));
+    const state={...glassStates[over?.state||'focused'],...over},id='lg-lens-'+(++n),exact=Number.isInteger(devicePixelRatio||1),parts=['bend','mid','tone'];
+    glass.insertAdjacentHTML('beforeend',parts.map(p=>glassFilter(`${id}-${p}`,state,p,exact)).join(''));
     if(!glass.isConnected)document.body.append(glass);
-    node.style.setProperty('--lg-hair',1/(devicePixelRatio||1)+'px');
-    node.style.backdropFilter=node.style.webkitBackdropFilter=`url(#${id})`;
-    glassLens(node,{...state,line:0},[id]);
+    node.style.setProperty('--lg-hair',1/(devicePixelRatio||1)+'px');node.style.setProperty('--lg-m',(state.margin||0)+'px');
+    node.style.backdropFilter=node.style.webkitBackdropFilter='none';
+    const layers=parts.map(p=>{const l=document.createElement('div');l.className='lg-glass-layer';
+      Object.assign(l.style,{position:'absolute',inset:'0',pointerEvents:'none',clipPath:`inset(${state.margin||0}px round 999px)`});
+      l.style.backdropFilter=l.style.webkitBackdropFilter=`url(#${id}-${p})`;return l;});
+    node.prepend(...layers);
+    glassLens(layers[0],{...state,line:0},parts.map(p=>`${id}-${p}`));
     return id;
   };
 })();

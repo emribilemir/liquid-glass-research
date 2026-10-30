@@ -35,6 +35,7 @@ Each step was measured against Apple's glass before it shipped in mcloud; the nu
 | 7. Round-end outline | Apple's dark hairline sits just **outside** the glass (fading as \|n_x\|³), and its outermost pixels mix in the page right under them | Left end over tiles 6.15 → 3.71, outer ring 24.7 → 8.8 |
 | 8. Side-by-side viewer | Your own Spotify page under macOS's glass and under mcloud's, one scroll | [See it side by side](#see-it-side-by-side) |
 | 9. Toolbar buttons | Recorded Music's Back / Share / More under scripted hover, press, hold and drag; found the AppKit/SwiftUI pieces (toolbar items drawn by `DesignLibrary`, `GlassInteractionFill`, FlexiGlass flags); rebuilt them for Chromium with the player's lens checked at button size, reading past the glass's edge as macOS does (`buttons/`) | Native 36pt glass = Music's Back to 0.51; lens + edge read + one-device-pixel hairline 5.6 -> 2.87; press spring 0.265 s / 0.48 (copy 0.275 / 0.42) |
+| 10. Performance | The button glass at 11fps: Chromium recomputes a filter result per reader, so every extra read of the colour steps re-ran the 15px darken blur; split into three backdrop-filter layers (bend, mid, tone) | 90.6ms -> 16.7ms per frame, fit 2.45 -> 2.48 |
 
 ![Apple Music, mcloud main and the research branch over the same page](research/compare/glass-music-old-bilinear.png)
 

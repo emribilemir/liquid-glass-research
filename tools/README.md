@@ -55,3 +55,6 @@ buttons/rec buttons/scripts/flex-back.txt ../research/local/buttons/flex-back 13
 node ../buttons/verify.mjs buttons/scripts/flex-back.txt ../research/local/buttons/copy-flex-back 130 0 240 110
 python3 buttons/compare.py ../research/local/buttons/flex-back ../research/local/buttons/copy-flex-back 192 52
 ```
+
+`../buttons/bench.mjs` times frames in a visible Chrome window with a page scrolling under the demo toolbar (no backdrop,
+CSS blur, the lens; `parts` takes the lens apart); `../buttons/player.mjs` compares players against Music's frames.

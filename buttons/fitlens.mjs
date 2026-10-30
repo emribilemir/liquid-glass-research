@@ -47,18 +47,19 @@ const css = fs.readFileSync(path.join(here, 'glass-buttons.css'), 'utf8'), lens 
 const browser = await chromium.launch(process.env.PWB ? { executablePath: process.env.PWB } : { channel: 'chrome' });
 const page = await browser.newPage({ viewport: { width: W / 2, height: H / 2 }, deviceScaleFactor: 2 });
 await page.setContent(`<!doctype html><style>html,body{margin:0;background:#000}${css}${process.env.EXTRA_CSS || ""}</style><img id="bg" style="position:absolute;left:0;top:0;width:${W / 2}px;height:${H / 2}px"><div id="shapes"></div><script>${lens}</script>`);
-await page.evaluate(shapeList => {
+// RIMF='{"w":1,"s":0.8}' draws the hairline with lgRimF (from the page under it) instead of the SVG stroke.
+await page.evaluate(([shapeList, rimf]) => {
   window.build = over => {
     document.querySelectorAll('svg[aria-hidden] filter[id^=lg-lens]').forEach(f => f.remove());
     const host = document.getElementById('shapes'); host.textContent = '';
     for (const s of shapeList) {
       // As glass-buttons.js: the shape box holds the rim; the face (the lens) is larger by the margin of page it reads.
-      const box = document.createElement('div'), f = document.createElement('div'), m = over.margin || 0; f.className = 'lg-glass-face';
+      const box = document.createElement('div'), f = document.createElement('div'), m = over.margin ?? (lgGlassInternals.glassStates[over.state || 'focused'].margin || 0); f.className = 'lg-glass-face';
       Object.assign(box.style, { position: 'absolute', left: s[0] + 'px', top: s[1] + 'px', width: s[2] + 'px', height: s[3] + 'px', isolation: 'isolate' });
-      f.style.inset = -m + 'px'; box.append(f); host.append(box); lgRim(box); lgLens(f, over);
+      f.style.inset = -m + 'px'; box.append(f); host.append(box); if (rimf) lgRimF(box, rimf); else lgRim(box); lgLens(f, over);
     }
   };
-}, shapeList);
+}, [shapeList, process.env.RIMF ? JSON.parse(process.env.RIMF) : null]);
 async function render(over, name) {
   await page.evaluate(([src, over]) => new Promise((res, rej) => { const img = document.getElementById('bg'); img.onload = () => { try { build(over) } catch (e) { rej(e) } requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(res, 30))); }; img.src = src; }), [bgs[name], over]);
   return page.screenshot({ type: 'png' });

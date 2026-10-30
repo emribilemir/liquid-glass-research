@@ -37,10 +37,25 @@
   <div class="log" id="log"></div>
 </div>
 <script src="lens.js"></script>
+<script>
+  // ?glass=blur: the CSS fallback only; ?glass=none: no backdrop at all (bench.mjs compares the three).
+  const glassMode = new URLSearchParams(location.search).get('glass');
+  if (glassMode === 'blur' || glassMode === 'none') { delete window.lgLens; delete window.lgRimF; }
+  // ?lens={json}: overrides of the button lens; ?rim=svg: the plain SVG hairline (bench.mjs).
+  const qq = new URLSearchParams(location.search); window.lgLensOver = JSON.parse(qq.get('lens') || '{}'); window.lgRimMode = qq.get('rim');
+  if (glassMode === 'none') document.head.insertAdjacentHTML('beforeend', '<style>.lg-glass-face{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}</style>');
+</script>
 <script src="glass-buttons.js"></script>
 <script>
   const q = new URLSearchParams(location.search);
   if (q.get('scene') === 'art') document.body.classList.add('scene-art');
+  // ?anim: a striped page scrolling under the toolbar, as a page scrolls under Spotify's (bench.mjs).
+  if (q.has('anim')) {
+    const page = document.createElement('div');
+    page.style.cssText = 'position:absolute;left:200px;right:0;top:0;height:3000px;background:repeating-linear-gradient(0deg,#e8452c 0 40px,#fff 40px 44px,#1d5fd6 44px 90px,#111 90px 120px,#f0a030 120px 170px)';
+    document.querySelector('.window').insertBefore(page, document.querySelector('.toolbar'));
+    let y = 0; const step = () => { y = (y + 3) % 170; page.style.transform = `translateY(${-y}px)`; requestAnimationFrame(step); }; requestAnimationFrame(step);
+  }
   if (q.has('manual')) lgClock.manual();
   const bar = document.querySelector('.toolbar');
   addEventListener('pointermove', e => bar.classList.toggle('band', e.clientY < 52 && e.clientX >= 200 || e.buttons === 1 && bar.classList.contains('band')));

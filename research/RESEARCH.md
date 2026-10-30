@@ -718,6 +718,57 @@ fitting it:
   **2.87** (3.94 with a 1px inset shadow; the edge read refits to the same values). Still open: the sharp line over detail, the wash reaching
   deeper (Apple +9 at 20pt in, ours +2), and putting the margin into mcloud's two-layer player glass.
 
+**Back to the player, against Music's own frames** (`buttons/player.mjs`). The focused Music frames from the scroll
+run (`fit/bg/mf*.png` behind, `fit/apple/mf*.png` Music; `scenes/scene1-2` are unfocused captures and do not
+apply) under mcloud's player as shipped on the research branch, rebuilt from the same functions (two layers, CSS
+hairline), and under variants of it; Music's icons masked (only the outer 13pt of each end and the glyph-free
+stretches count). Music's player sits at 40.5pt: Chromium snaps a filtered layer to whole CSS px but not its
+clip-path, so a first run had the lens maps a device pixel off the glass (the highlight looked a row too thick at
+the top and thin at the bottom). The page is now drawn 0.5pt higher and Music's frame read a row lower, the player at
+a whole 40pt as in mcloud. Mean abs per channel, 11 frames:
+
+Music's dark rim pixels sit at x 80 and 1481 (device px): its player is **700pt** wide from 40.5pt, not 701 (mcloud
+rounds to even widths too), so the page also moves 0.5pt left; the first table here used 701 and put our rim a pixel
+outside Music's at both ends.
+
+| player (700pt, aligned) | inside | outer 3pt of the glass | 2pt outside |
+| --- | --- | --- | --- |
+| mcloud as shipped | 4.75 | 8.53 | 4.78 |
+| new: SVG hairline 0.55, `gainL`, edge read, `hlHue`, no wash | 2.84 | 4.39 | 3.81 |
+| same, hairline 0.45 | 2.85 | 4.40 | **3.69** |
+
+The player's hairline is lighter than the buttons': the page at ~0.6 (grey 105 -> 62, pink 130 -> 79; 0.45 gives
+~61 / 76) against ~0.4-0.5 at 36pt. Music also darkens the last two glass pixels inside the round end a little
+(pink 130 -> 126, 112 before the line), which ours does not yet.
+
+**The hairline over the glass, not under it.** Drawn under the glass, the line was covered row by row by the
+glass's antialiased edge: along the right end the darkness per row went 34, 50, 47, 54, 53, 65 where Music's rises
+smoothly (44, 58, 60, 67, 68, 75), which read as jaggies. Drawn over the glass (after it, `z-index: 0`) the same
+stroke (1 device px, 0.5 out, 0.45) follows Music's: roughness (mean |second difference| of the per-row darkness)
+9.1 -> 2.6 (Music 2.7), per-row difference to Music 9.6 -> 3.6. Wider or inward strokes (1.5-3px) scored worse. The
+buttons are unchanged by it (2.447 -> 2.450). `compare/player-right-end-music-mcloud-new.png`.
+
+**The hairline takes the page's colour.** Music's line over pink (page 236,95,165) is 180,51,107: the channels
+darken unevenly and the line is a deeper pink; a black line at any opacity darkens them alike (ours 146,59,102). On
+BtnLab's flats the line pixel is the page's luminance through a table (0, 32, 64 ... 255 -> 0, 11.6, 27.4, 45.8,
+68.4, 88.6, 102.2, 114.2, 123.2) with ~0.8 of its colour kept: pink 230,120,170 -> 166,60,104, red 220,40,40 ->
+155,15,15. `lgRimF()` (lens.js) draws it so: a backdrop-filter on the shape grown by 1px, the luminance table plus
+0.8 of the chroma, weighted by a map of the one-device-pixel band outside the glass (4x4 samples per pixel) fading as
+(1 - x/r)^3 from each end, over the glass. Buttons (weight 0.85): pink 148,60,100 / red 137,4,4 (SVG stroke
+117,61,87 / 112,20,20), set 2.24 -> 2.11. Player (weight 0.8, lighter at this radius): right end 171,53,112 (Music
+180,51,107), 2pt outside 3.66 -> 3.47. `compare/player-right-end-music-mcloud-new.png`.
+
+- The colour gain by luminance measured on the buttons is the largest gain on the player too: Music's reds and pinks
+  are more saturated than mcloud's.
+- **The highlight keeps the hue.** Music's top edge over orange is 255,176,65 (interior 238,140,41); mixing toward
+  white, as fitted on grey, gave 255,180,99. Raising the luminance as on grey but scaling the three channels alike,
+  `out = c * (1 + peak*mh*(2 - L)/L)` (the ratio from a table on L), gives 255,175,61 over orange, 100,128,255 over
+  blue (Music 104,129,255) and leaves grey as it was (lab: 134/115/98, ours 133/112/99).
+- The colour wash fitted on the buttons hurts the player and is left out there.
+
+Images: `compare/player-music-mcloud-new-mf12.png`, `-mf24.png`, `compare/player-top-edge-music-mcloud-new.png`
+(Music / mcloud / new; labels Turkish).
+
 **Chromium copy** (`buttons/glass-buttons.js` + `.css` + `lens.js`, demo `buttons/index.html`, `?scene=art` for a
 colourful page): the glass is the player's lens (`lens.js`, mcloud's `glassFilter`/`glassLens` unchanged except for
 fractional sizes) on its own face element, with the button-size parameters above; pressing resizes the face so the
@@ -742,6 +793,43 @@ Measured with the lens glass and the edge read (light: luminance inside the left
 
 Not matched yet: the light while held far outside (Music keeps hover-level light in some places, the copy uses a
 toolbar zone); glyphs are approximations of SF Symbols; menus are not copied.
+
+## Performance: the button glass in three layers (2026-10-30)
+
+`buttons/bench.mjs` times frames in a visible Chrome window (the GPU path; headless renders in software) while a
+striped page scrolls under the demo's toolbar (Back and the Share + More capsule), 4s per run, 60Hz display:
+
+| glass | mean frame | p95 | frames > 20ms |
+| --- | --- | --- | --- |
+| no backdrop | 16.7ms | 17.1ms | 0 |
+| CSS blur fallback | 16.7ms | 17.1ms | 0 |
+| button lens, one filter (`part: 'all'`) | **90.6ms** (~11fps) | 133ms | all |
+| same, while Back is pressed and released | 152ms | 467ms | all |
+
+Taking it apart (`bench.mjs parts`): the SVG or page-coloured hairline changes nothing; dropping the 12pt margin
+gives 61ms; dropping the darken halo as well 22ms; plain colour and highlight on top of that 16.7ms; and the player's
+own lens at button size (mcloud's `focused` state) runs at 16.7ms too. The cost is not any one effect but how the
+filter is wired: the colour gain by luminance and the hue-keeping highlight read their input several times
+(luminance, chroma, toned copy), and **Chromium recomputes a filter result for every primitive that reads it**, the
+whole chain above it included. Each extra reader re-ran the darken halo's 15px blur over the enlarged box.
+
+The fix is the one the player already uses for its bend, taken one step further: split the filter where results are
+read more than once, and let each part be its own element's backdrop-filter, so the next one reads it as a texture.
+`lgLens()` now builds three sibling layers clipped to the glass, `bend` (the 4-tap bend), `mid` (thin lines, darken
+halo, edge read past the glass) and `tone` (colour gain, hue-keeping highlight, edge line). The container must not
+clip or filter: that would make it the layers' backdrop root and each would see only what is inside it.
+
+| button lens | mean frame | p95 | frames > 20ms | fit (20 patterns) |
+| --- | --- | --- | --- | --- |
+| one filter | 90.6ms | 133ms | all | 2.45 |
+| three layers | **16.7ms** | 16.8ms | 0 | 2.48 (page-coloured hairline) / 2.59 (SVG stroke) |
+| three layers, Back pressed and released | 18.1ms | 17.5ms | 6 of 215 | |
+
+The small fit change comes from the edge read now reading the page around a bent layer rather than the raw page. The
+remaining long frames while pressed are the lens maps being redrawn as the glass grows (a canvas draw and PNG encode
+per frame); caching maps per size step or scaling the map instead of redrawing would remove them. Rule for any
+glass here: **one expensive blur per layer, and never read a blurred result twice in one filter.** (A first try put
+the layers in the DOM in reverse, tone before bend, and scored 6.64: the order matters, bend first.)
 
 ## Open questions
 

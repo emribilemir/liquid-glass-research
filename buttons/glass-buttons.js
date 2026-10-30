@@ -18,9 +18,8 @@
     falloffK: 5, falloffP: 0.575,                   // pressed light outside the button: 1 / (1 + (d/K)^P), d in pt
     flexMax: 0.35, flexRange: 60,                   // rubber-band pull toward a dragged pointer: max pt, tanh range pt
     inset: 3,                                       // segment light circle: height - 2*inset
-    // The lens reads 12pt of page around the glass: the edge pixels show it from ~11.5pt out, the glass takes its colour
-    // (research/RESEARCH.md, "Reading past the edge"). pageMix is replaced by that edge read.
-    lens: { margin: 12, outerDist: 11.5, outerBlur: 3, outerMix: .68, outerEnd: .75, outerW: 2.09, washBlur: 10, washMix: .085, pageMix: 0 },
+    lens: { state: 'button' },                      // lens.js's glassStates.button (fitted at button size)
+    rim: { w: .85, s: .8 },                         // hairline strength and colour kept (lens.js lgRimF; BtnLab)
   };
   let manual = false, virt = 0;
   const now = () => manual ? virt : performance.now() / 1000;
@@ -55,7 +54,7 @@
       // The lens lives on its own face, resized while pressed so the lens is redrawn at the new size: scaling a
       // backdrop-filter resamples its result and blurs the rim. The segments (glyphs, lights) scale about the centre.
       this.face = document.createElement('div'); this.face.className = 'lg-glass-face'; el.prepend(this.face);
-      this.rim = window.lgRim ? lgRim(el) : null;
+      this.rim = window.lgRimMode === 'svg' && window.lgRim ? lgRim(el) : window.lgRimF ? lgRimF(el, M.rim) : null;   // the hairline, in the page's colour
       const cx = el.offsetWidth / 2, cy = el.offsetHeight / 2;
       this.segs.forEach(s => { s.style.transformOrigin = `${cx - s.offsetLeft}px ${cy - s.offsetTop}px` });
       el.addEventListener('pointerdown', e => this.press(e));
@@ -116,7 +115,7 @@
     render() {
       const s = this.el.style, k = this.scale.x, gx = (k - 1) * this.el.offsetWidth / 2, gy = (k - 1) * this.el.offsetHeight / 2;
       s.setProperty('--lg-t', `translate(${this.fx.x.toFixed(3)}px,${this.fy.x.toFixed(3)}px)`);
-      const m = M.lens.margin;
+      const m = window.lgGlassInternals ? ({ ...lgGlassInternals.glassStates.button, ...window.lgLensOver }.margin || 0) : 0;
       this.face.style.inset = `${(-gy - m).toFixed(3)}px ${(-gx - m).toFixed(3)}px`; if (this.rim) Object.assign(this.rim.style, { left: `${(-gx - 1).toFixed(3)}px`, top: `${(-gy - 1).toFixed(3)}px`, width: `calc(100% + ${(2 * gx + 2).toFixed(3)}px)`, height: `calc(100% + ${(2 * gy + 2).toFixed(3)}px)` });
       const t = Math.abs(k - 1) < 1e-4 ? '' : `scale(${k.toFixed(4)})`; this.segs.forEach(seg => { seg.style.transform = t });
       if (this.p) { s.setProperty('--lg-px', (this.p[0] + gx + m).toFixed(1) + 'px'); s.setProperty('--lg-py', (this.p[1] + gy + m).toFixed(1) + 'px') }
@@ -128,7 +127,7 @@
 
   const init = root => root.querySelectorAll('.lg-glass:not([data-lg-ready])').forEach(el => {
     el.dataset.lgReady = ''; el.lgGlass = new Glass(el);
-    if (window.lgLens) { el.lgGlass.face.style.inset = -M.lens.margin + 'px'; lgLens(el.lgGlass.face, M.lens) } // the player's lens, drawn at the face's size
+    if (window.lgLens) { el.lgGlass.face.style.inset = -({ ...lgGlassInternals.glassStates.button, ...window.lgLensOver }.margin || 0) + 'px'; lgLens(el.lgGlass.face, { ...M.lens, ...window.lgLensOver }) } // drawn at the face's size
   });
   window.lgGlassButtons = { init, M };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => init(document)); else init(document);
