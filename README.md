@@ -61,7 +61,11 @@ curl -fsSL https://raw.githubusercontent.com/emribilemir/liquid-glass-research/m
 It copies your Spotify home page (Spotify restarts twice and scrolls by itself for a few seconds), then opens two
 windows over that copy: on the left macOS's own Liquid Glass bar (SwiftUI `.glassEffect`, the glass Apple Music's
 player uses), on the right [mcloud](https://github.com/bulutakbulutt/mcloud)'s bar in Chrome. Scroll either window
-and both follow. Run the same command again to reopen it; add options after `bash -s --`: `--resnap` copies the page
+and both follow. A third window, **Zoom**, shows the same spot of both side by side, magnified with no smoothing,
+following the pointer over either window (`+` / `-` magnify, `F` freezes the spot, `0` resets); it needs the Screen
+Recording permission for the terminal that runs it, and never takes focus (macOS glass changes its look in a window
+that is not key). To compare a branch that is not in mcloud's `main` yet, such as the player on the new lens, pass
+`--ref claude/apple-music-button-behavior-a5154f`. Run the same command again to reopen it; add options after `bash -s --`: `--resnap` copies the page
 again, `--ref <branch>` compares another mcloud branch, `--theme <dir>` a local mcloud checkout. Everything lives in
 `~/Library/Application Support/LiquidGlassSideBySide`; delete that folder to remove it.
 

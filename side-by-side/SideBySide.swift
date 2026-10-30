@@ -6,9 +6,12 @@
 //
 //   SideBySide snap <dir> [route]   copy the open Spotify page (Spotify running with --remote-debugging-port=9229)
 //   SideBySide <dir> <theme dir>    show the copy; theme dir is an mcloud checkout (theme.js, user.css, dev/)
+// A third window, Zoom, shows the same spot of both windows side by side, magnified with no smoothing, following the
+// pointer over either window: + and - change the magnification, F freezes the spot, 0 resets. It never takes focus.
 // CHROME overrides the Chrome binary. install.sh does all of it.
 import SwiftUI
 import AppKit
+import ScreenCaptureKit
 
 let args = CommandLine.arguments
 let chromeBinary = ProcessInfo.processInfo.environment["CHROME"] ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -143,7 +146,11 @@ struct GlassBar: View {
 let partsHTML = info.parts.map { "<img src=\(String(reflecting: snapDir.appendingPathComponent($0.file).absoluteString)) style=\"top:\($0.y)px\">" }.joined()
 let setupScript = """
 (async () => {
-  await new Promise(r => { const t = () => document.querySelector('#am-glass feImage[href^="data:"]') ? r() : setTimeout(t, 100); t(); });
+  // The player's glass is drawn once its lens maps are in (mcloud's toolbarLens: layers in .am-player-face; older
+  // versions: a single #am-glass filter).
+  const drawn = () => { const l = document.querySelector('#am-player .am-tglass-layer'), m = l && getComputedStyle(l).backdropFilter.match(/#([\\w-]+)/);
+    return m ? document.getElementById(m[1])?.querySelector('feImage[href^="data:"]') : document.querySelector('#am-glass feImage[href^="data:"]'); };
+  await new Promise(r => { const t = () => drawn() ? r() : setTimeout(t, 100); t(); });
   document.title = 'mcloud (Chromium)';
   document.body.classList.add('am-liquid', 'sbs-bare');
   const css = document.createElement('style');
@@ -153,7 +160,7 @@ let setupScript = """
     #sbs-page img{position:absolute;left:0;width:\(info.width)px;height:\(info.viewHeight)px}
     #am-sidebar,#am-sidebar-glow,.am-toast,#am-popover{display:none!important}
     #am-player{left:\(margin)px!important;top:\(info.bar.y)px!important;bottom:auto!important;width:\(info.bar.w)px!important;height:\(info.bar.h)px!important}
-    body.sbs-bare #am-player>:not(.am-glass-rim){visibility:hidden}`;
+    body.sbs-bare #am-player>:not(.am-glass-rim,.am-player-face,.am-tglass-rim){visibility:hidden}`;
   document.head.append(css);
   const box = document.createElement('div'); box.id = 'sbs';
   box.innerHTML = `<div id="sbs-page">\(partsHTML)</div>`; document.body.append(box);
@@ -165,8 +172,100 @@ let setupScript = """
 })()
 """
 
+
+// MARK: - Zoom
+
+// Both windows' pixels around the same spot, side by side, magnified with no smoothing; a red cross marks the spot.
+final class ZoomView: NSView {
+    var images: [CGImage?] = [nil, nil], status = ""
+    let labels = ["Apple (macOS Liquid Glass)", "mcloud (Chromium)"], gap = 12.0, top = 22.0
+    override var isFlipped: Bool { true }
+    override func draw(_ dirty: NSRect) {
+        NSColor(white: 0.08, alpha: 1).setFill(); bounds.fill()
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let pane = (bounds.width - gap) / 2, text: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 11, weight: .medium)]
+        for i in 0..<2 {
+            let x = Double(i) * (pane + gap)
+            (labels[i] as NSString).draw(at: NSPoint(x: x + 4, y: 4), withAttributes: text)
+            guard let image = images[i] else { continue }
+            ctx.saveGState(); ctx.interpolationQuality = .none
+            ctx.translateBy(x: x, y: top + pane); ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: pane, height: pane)); ctx.restoreGState()
+            let c = NSPoint(x: x + pane / 2, y: top + pane / 2), cross = NSBezierPath()
+            cross.move(to: NSPoint(x: c.x - 7, y: c.y)); cross.line(to: NSPoint(x: c.x + 7, y: c.y)); cross.move(to: NSPoint(x: c.x, y: c.y - 7)); cross.line(to: NSPoint(x: c.x, y: c.y + 7))
+            NSColor(srgbRed: 1, green: 0.25, blue: 0.35, alpha: 0.85).setStroke(); cross.lineWidth = 1; cross.stroke()
+        }
+        (status as NSString).draw(at: NSPoint(x: 4, y: bounds.height - 17), withAttributes: [.foregroundColor: NSColor(white: 0.65, alpha: 1), .font: NSFont.systemFont(ofSize: 11)])
+    }
+}
+
+// A panel that never takes focus: the native glass changes its look in a window that is not key.
+final class ZoomPanel: NSPanel { override var canBecomeKey: Bool { false }; override var canBecomeMain: Bool { false } }
+
+@MainActor final class Zoom {
+    let steps = [2.0, 3, 4, 6, 8, 12, 16, 24, 32], pane = 380.0
+    var step = 4, frozen = false, spot = CGPoint(x: viewW / 2, y: 0), busy = false
+    var panel: ZoomPanel!, view = ZoomView(), windows: [SCWindow?] = [nil, nil], titles = [0.0, 0.0]
+    let native: NSWindow, chromePid: () -> pid_t
+    init(native: NSWindow, chromePid: @escaping () -> pid_t) { self.native = native; self.chromePid = chromePid }
+
+    func open() {
+        spot.y = info.bar.y + info.bar.h / 2
+        let size = NSSize(width: 2 * pane + view.gap, height: pane + view.top + 22)
+        panel = ZoomPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .utilityWindow, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "Zoom"; panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.becomesKeyOnlyIfNeeded = true
+        panel.appearance = NSAppearance(named: .darkAqua); view.frame = NSRect(origin: .zero, size: size); panel.contentView = view
+        let screen = NSScreen.main!.visibleFrame
+        panel.setFrameTopLeftPoint(NSPoint(x: screen.midX - size.width / 2, y: screen.maxY - 40)); panel.orderFront(nil)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            switch event.charactersIgnoringModifiers {
+            case "+", "=": self.step = min(self.step + 1, self.steps.count - 1)
+            case "-", "_": self.step = max(self.step - 1, 0)
+            case "0": self.step = 4
+            case "f", "F": self.frozen.toggle()
+            default: return event
+            }
+            return nil
+        }
+        Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in Task { @MainActor in await self?.tick() } }
+    }
+
+    // The pointer as a point in the page area (viewW x viewH, top-left origin) of whichever window it is over.
+    func pointer() -> CGPoint? {
+        let m = NSEvent.mouseLocation, content = native.convertToScreen(native.contentView!.frame)
+        if content.contains(m) { return CGPoint(x: m.x - content.minX, y: content.maxY - m.y) }
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        guard let w = list.first(where: { ($0[kCGWindowOwnerPID as String] as? pid_t) == chromePid() && ($0[kCGWindowLayer as String] as? Int) == 0 }),
+              let b = w[kCGWindowBounds as String] as? [String: Double], let bx = b["X"], let by = b["Y"], let bw = b["Width"], let bh = b["Height"] else { return nil }
+        let y = NSScreen.screens[0].frame.maxY - m.y, title = bh - viewH, p = CGPoint(x: m.x - bx, y: y - by - title)
+        return p.x >= 0 && p.x < bw && p.y >= 0 && p.y < viewH ? p : nil
+    }
+
+    func tick() async {
+        guard !busy else { return }; busy = true; defer { busy = false }
+        if !frozen, let p = pointer() { spot = p }
+        let zoom = steps[step], side = (pane / zoom).rounded()
+        let rect = CGRect(x: min(max(0, spot.x - side / 2), viewW - side), y: min(max(0, spot.y - side / 2), viewH - side), width: side, height: side)
+        if windows.contains(where: { $0 == nil }), let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) {
+            windows[0] = content.windows.first { $0.windowID == CGWindowID(native.windowNumber) }
+            windows[1] = content.windows.filter { $0.owningApplication?.processID == chromePid() && $0.windowLayer == 0 }.max { $0.frame.width < $1.frame.width }
+            titles = windows.map { Double($0?.frame.height ?? CGFloat(viewH)) - viewH }
+        }
+        for i in 0..<2 {
+            guard let w = windows[i] else { continue }
+            let config = SCStreamConfiguration(), scale = Double(NSScreen.main?.backingScaleFactor ?? 2.0)
+            config.sourceRect = rect.offsetBy(dx: 0, dy: titles[i]); config.width = Int(side * scale); config.height = Int(side * scale); config.showsCursor = false
+            view.images[i] = try? await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: config)
+        }
+        view.status = String(format: "x%g  %gpt square at %.0f, %.0f%@   + / - magnify   F freeze   0 reset", zoom, side, rect.midX, rect.midY, frozen ? "  (frozen)" : "")
+        view.needsDisplay = true
+    }
+}
+
 final class App: NSObject, NSApplicationDelegate {
     var window: NSWindow!, scroll: NSScrollView!, chrome: Process?, devtools = DevTools(), applyingRemote = false, chromePid: pid_t = 0
+    var zoom: Zoom?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         guard let screen = NSScreen.main?.visibleFrame else { return }
@@ -245,6 +344,7 @@ final class App: NSObject, NSApplicationDelegate {
         print("Chrome:", await devtools.evaluate(setupScript) ?? "no reply"); fflush(stdout)
         devtools.send("Runtime.evaluate", ["expression": "sbsTo(\(scroll.contentView.bounds.origin.y))"])
         NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+        zoom = Zoom(native: window) { [weak self] in self?.chromePid ?? 0 }; zoom?.open()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
