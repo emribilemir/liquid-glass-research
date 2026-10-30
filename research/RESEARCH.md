@@ -874,6 +874,68 @@ not its visible output, decides what it drags into each redraw; clip it to where
 Scrolling still redraws everything under every glass (the page moves under all of them): 58fps, the player's glass
 adding ~18% of a core over the rest.
 
+## Performance in Spotify: render passes, not area (2026-10-30)
+
+The fixes above held the player at 60fps for rAF, but real wheel scrolling (a ScreenCaptureKit recording of the window
+while CGEvent wheel events scroll the page; a frame counts when its content changed) ran mcloud's playlist at
+26-28fps and Home at 47-50 with the glass on, 60 with it off. Each glass alone fitted; the toolbar's and the player's
+together did not. rAF (58fps) had hidden it because vsync turns a 17ms frame into a 33ms one, and near that limit a
+run comes out at ~33 or ~56 depending on the GPU's clock. Measured instead with mcloud's `dev/client/cost.mjs`:
+Spotify started with `--disable-gpu-vsync --disable-frame-rate-limit --disable-mac-overlays` draws as fast as the GPU
+allows, and the interval between viz's `DirectRenderer::DrawFrame` events is the frame's GPU cost (without the last
+flag the glass was held at exactly 60 draws a second). Passes from Skia's trace (`CommandBuffer::addRenderPass` per
+frame, M5, 1146x770 at 2x):
+
+| one 36pt circle, toolbar state | render passes a frame |
+| --- | --- |
+| bend (4 taps: map merges, displacements, bilinear `in`/`over`) | 20 |
+| mid (thin lines, darken halo, edge read, wash: 4 blurs) | 24 |
+| tone (colour gain and highlight; the colour chain read twice) | 15 |
+| hairline (`lgRimF`) | 9 |
+| of which each layer's own cost (saveLayer, backdrop copy) | ~2.3 |
+
+**Cost goes with passes, hardly with size**: one circle cost ~2.4ms a frame, the player (15 times its area) ~2.7,
+and 600 one-primitive passes on ten 60px boxes ~40ms. Map bytes (all maps 1x1: no change) and layer area (bend and
+tone on the glass's own box: no change at circle size) were not it. Five glasses, ~350 passes, cost 13-21ms on top of
+the page's 4.5.
+
+What helped, all at the same pixels unless noted:
+
+- **One image per shift map.** R=G=x, B=y in one `feImage` displaces exactly like the two grey images recombined in
+  the filter (measured: identical screenshots on the P3 panel); the recombination cost two passes per map.
+- **No aliases.** `<feMerge result=x><feMergeNode in=y/></feMerge>` is a pass, redrawn for every reader of x: the
+  tone layer now reads `SourceGraphic` itself and the highlight reads the colour result directly.
+- **One set of layers for many shapes** (mcloud `toolbarLens.shared()`). Since a pass costs about the same at any size,
+  the toolbar's four shapes share one bend, mid and tone layer and one hairline, spanning them all and clipped to a
+  `path()` of their pills. Each shape still draws its maps at its own size, into filters nothing applies; the shared
+  filters' merges take every shape's pieces at its offset, and the displacement scale is the largest any shape needs
+  (+10% for the press). The toolbar went from ~11ms to ~4.7ms.
+- **Layers on the glass's own box** where nothing reads past the edge (bend, tone; the hairline on the glass + 1px): on
+  the wide shared box the area does count (~1.8ms).
+
+Total glass cost 20.7 -> 6.1ms a frame; recorded scrolling 60.1fps with no gap over 25ms on the playlist (was 26-28)
+and on Home (was 47-48). `fitlens` (36pt circle and capsule, page-coloured hairline): 2.529 -> 2.528; `player.mjs
+lens3` 2.90 / 4.58 / 3.47 unchanged. In Spotify the toolbar differs from per-shape layers by up to 14/255 on ~90
+device px: each shape's halo now sees its neighbour's bent page rather than its finished glass, and the path clip
+antialiases a little differently.
+
+Limits and dead ends:
+
+- On fractional scales (Windows 125%, 150%) a shared layer put the shapes' edges up to a device pixel away from where
+  their own layers land, and snapping the pieces to device pixels did not match it; mcloud shares only on whole-pixel
+  screens and keeps the margin's box for every layer there.
+- A blur over ~22 device px (11pt at 2x) cost about three times one just under it (15 mids on circles: ~35fps with
+  the 15.3pt halo, 60 at 10.8pt). Two blurs of sigma/sqrt(2) (the same Gaussian) helped in isolation but not
+  measurably in Spotify. The halos stay as fitted.
+- `width="100%"` on a primitive inside a backdrop filter resolves against the 0x0 `<svg>`: the blur came out empty, the
+  bend vanished, and the frame got cheap. Check the pixels of every speed-up.
+- Dimming thin lines in a layer of its own (so mid reads it as a texture, not four recomputations) halved mid's cost
+  alone but bought nothing once the toolbar shared layers; it moved the look (player lens3 2.77 / 4.13 / 3.46, buttons'
+  fit 2.590) and was left out.
+
+Rule, with the last section's: **count render passes, not pixels: a primitive is a pass, a result read twice is two,
+and a filter run for each of N small shapes costs N times what one filter over all of them does.**
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
