@@ -50,8 +50,12 @@
       // colour Apple's glass adds nothing): the chroma (R-L, G-L, B-L) of a wide blur minus that of the bent page,
       // added at washMix (washLocal scales the subtracted part: 0 is the plain chroma of the blur).
       +(state.washMix?`<feGaussianBlur in="SourceGraphic" stdDeviation="${state.washBlur}" edgeMode="none" result="wb"/><feColorMatrix in="wb" values=".7874 -.7152 -.0722 0 .5 -.2126 .2848 -.0722 0 .5 -.2126 -.7152 .9278 0 .5 0 0 0 1 0" result="wc"/><feColorMatrix in="core" values=".7874 -.7152 -.0722 0 .5 -.2126 .2848 -.0722 0 .5 -.2126 -.7152 .9278 0 .5 0 0 0 1 0" result="cc"/><feComposite in="wc" in2="cc" operator="arithmetic" k2="1" k3="${-(state.washLocal??1)}" k4="${((state.washLocal??1)/2).toFixed(4)}" result="wd"/><feComposite in="glass" in2="wd" operator="arithmetic" k2="1" k3="${state.washMix}" k4="${(-state.washMix/2).toFixed(4)}" result="glass"/>`:''):'';
-    // Rim smoothing along the edge normal: a vertical and a sideways blur, each mixed in through its mask's alpha.
-    const smooth=`${img('mv')}${img('mz')}<feGaussianBlur in="SourceGraphic" stdDeviation="0 ${state.smooth}" edgeMode="duplicate" result="bv"/><feGaussianBlur in="SourceGraphic" stdDeviation="${state.smooth} 0" edgeMode="duplicate" result="bz"/><feComposite in="bv" in2="mv" operator="in" result="sv"/><feComposite in="bz" in2="mz" operator="in" result="sz"/><feComposite in="sv" in2="SourceGraphic" operator="over" result="s1"/><feComposite in="sz" in2="s1" operator="over" result="core"/>`;
+    // Rim smoothing along the edge normal: a vertical and a sideways blur, each mixed in through its mask's alpha. The
+    // layered glass does it at the end of the bend: in mid, before the thin lines and the halo, its result was read
+    // three times and theirs four, each read recomputing the chain (on fractional screen scales, the only ones without
+    // the exact bend, a 36pt circle's mid ran 134 passes a frame and scrolling held ~22fps). The one-tap map leaves the
+    // page outside the glass unshifted, so the blurs there read the page as they did in mid.
+    const smooth=src=>`${img('mv')}${img('mz')}<feGaussianBlur in="${src}" stdDeviation="0 ${state.smooth}" edgeMode="duplicate" result="bv"/><feGaussianBlur in="${src}" stdDeviation="${state.smooth} 0" edgeMode="duplicate" result="bz"/><feComposite in="bv" in2="mv" operator="in" result="sv"/><feComposite in="bz" in2="mz" operator="in" result="sz"/><feComposite in="sv" in2="${src}" operator="over" result="s1"/><feComposite in="sz" in2="s1" operator="over" result="core"/>`;
     // Thin bright detail dims (a min with a 1px blur, mixed in): Apple's 1pt lines carry ~75% of ours, flat colour is equal.
     const thin=src=>`<feGaussianBlur in="${src}" stdDeviation="${state.thin}" edgeMode="duplicate" result="tb"/><feBlend in="${src}" in2="tb" mode="darken" result="td"/><feComposite in="${src}" in2="td" operator="arithmetic" k2="${1-state.thinMix}" k3="${state.thinMix}" result="core"/>`;
     const darken=`<feGaussianBlur in="core" stdDeviation="${state.darkenBlur}" edgeMode="duplicate" result="halo"/><feBlend in="core" in2="halo" mode="darken" result="dk"/><feComposite in="core" in2="dk" operator="arithmetic" k2="${(1-state.darken).toFixed(2)}" k3="${state.darken}" result="glass"/>`
@@ -71,7 +75,7 @@
     const highlight=state.hlHue?`<feColorMatrix in="tn" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0" result="hll"/><feComponentTransfer in="hll" result="hlt"><feFuncR ${hlRatio}/><feFuncG ${hlRatio}/><feFuncB ${hlRatio}/></feComponentTransfer><feComposite in="hlt" in2="mh" operator="arithmetic" k1="1" result="hlf"/><feComposite in="tn" in2="hlf" operator="arithmetic" k1="${(hlCap*peakHighlight).toFixed(4)}" k2="1"/>`
       :`<feComposite in2="mh" operator="arithmetic" k1="${state.hlK1??-peakHighlight}" k2="1" k3="${state.hlK3??(state.highlightTo*peakHighlight).toFixed(4)}"/>`;
     const face=`${img('mh')}${state.line?img('ml'):''}${colour}${highlight}${state.line?'<feBlend in2="ml" mode="multiply"/>':''}`;
-    return `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">${part==='bend'?bend:part==='face'?(exact?thin('SourceGraphic'):smooth+thin('core'))+darken+outer+face:part==='mid'?(exact?thin('SourceGraphic'):smooth+thin('core'))+darken+outer:part==='tone'?face:bend+darken+outer+face}</filter>`;
+    return `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">${part==='bend'?bend+(exact?'':smooth('core')):part==='face'?(exact?thin('SourceGraphic'):smooth('SourceGraphic')+thin('core'))+darken+outer+face:part==='mid'?thin('SourceGraphic')+darken+outer:part==='tone'?face:bend+darken+outer+face}</filter>`;
   };
   // The sidebar glow (user.css) saturates and brightens hard so that small covers reach its edge; this soft
   // ceiling keeps large coloured areas, such as playlist headers under the sidebar, from blowing out.
@@ -97,8 +101,8 @@
       image.setAttribute('x',box[p][0]-d);image.setAttribute('y',-d);image.setAttribute('width',box[p][1]);image.setAttribute('height',h);}
   }
   // build (optional) rebuilds the filters before each redraw: the player's change with the screen scale. drawn
-  // (optional) runs after each drawing. state.scaleOf (mcloud's shared()) turns the displacement scale this shape needs into
-  // the one every shape of its filter uses. inset: passed to setMaps. Returns a function that draws again.
+  // (optional) runs after each drawing. state.scaleOf (mcloud's shared(), whole-pixel screens: the 4-tap bend) turns the
+  // displacement scale this shape needs into the one every shape of its filter uses. inset: passed to setMaps. Returns a function that draws again.
   function glassLens(node,state,filterIds,build,drawn,inset) {
     let glassSize='';
     const hl=state.highlight,highlightAt=edge=>{const f=edge/.5;if(f>=hl.length-1)return 0;const i=Math.floor(f);return (hl[i]+(hl[i+1]-hl[i])*(f-i))/hl[0];},fade=u=>1-u*u*(3-2*u);
@@ -116,14 +120,14 @@
       // A shift map pixel: x (a byte) in red and green, y (0-1) in blue, compensated for P3's blue row.
       const put=(m,i,xv,yv)=>{m[i]=m[i+1]=xv;m[i+2]=Math.round(255*(wideGamut?encode(Math.min(1,Math.max(0,(linear(yv)-.0895*linear(xv/255))/.9108))):yv));m[i+3]=255;};
       // Bilinear taps: per pixel, offsets (px) to the 4 page pixels around its source point; one scale for all four.
-      const taps=fx?[0,1,2,3].map(j=>data['bm'+j].data):null,offsets=taps&&new Float32Array(CW*H*8),outs=me&&new Float32Array(CW*H*2),moves=mm&&state.scaleOf&&new Float32Array(CW*H*2);let reach=me?state.outerDist:1;
+      const taps=fx?[0,1,2,3].map(j=>data['bm'+j].data):null,offsets=taps&&new Float32Array(CW*H*8),outs=me&&new Float32Array(CW*H*2);let reach=me?state.outerDist:1;
       for(let y=0;y<H;y++)for(let c=0;c<CW;c++){
         // The vector to the pill's centre line is the rim's inward normal; the maps hold its x/y shift. Masks are
         // white with their weight in alpha (alpha survives the P3 conversion of feImage; greys survive it too).
         const x=cols[c],px=(x+.5)/k-M,py=(y+.5)/k-M,dx=Math.min(gw-r,Math.max(r,px))-px,dy=r-py,length=Math.hypot(dx,dy)||1,edge=Math.max(0,r-length),ny2=(dy/length)**2,i=(y*CW+c)*4;
         if(me){const u=length>r+1/k?0:state.outerMix*(ny2+(1-ny2)*(state.outerEnd??1))*Math.max(0,1-edge*k/state.outerW);me[i]=me[i+1]=me[i+2]=255;me[i+3]=Math.round(255*u);
           outs[(y*CW+c)*2]=-state.outerDist*dx/length;outs[(y*CW+c)*2+1]=-state.outerDist*dy/length;}
-        if(mm){const t=shiftAt(edge)/A/length;if(moves){moves[(y*CW+c)*2]=t*A*dx;moves[(y*CW+c)*2+1]=t*A*dy;}else put(mm,i,Math.round(128+127*t*dx),(128+127*t*dy)/255);}
+        if(mm){const t=length>r+1/k?0:shiftAt(edge)/A/length;put(mm,i,Math.round(128+127*t*dx),(128+127*t*dy)/255);}
         if(mh){mh[i]=mh[i+1]=mh[i+2]=Math.round(255*highlightAt(edge)*Math.sqrt(ny2)**state.highlightPow);mh[i+3]=255;}
         if(ml){ml[i]=ml[i+1]=ml[i+2]=Math.round(255*(1-state.line*fade(Math.min(1,edge*k/state.lineW))*Math.sqrt(1-ny2)));ml[i+3]=255;}
         if(mv){const m=Math.min(1,Math.max(0,(1/Math.max(squeeze(edge),.05)-1)/state.smoothDiv));mv[i]=mv[i+1]=mv[i+2]=mz[i]=mz[i+1]=mz[i+2]=255;mv[i+3]=Math.round(255*m*ny2);mz[i+3]=Math.round(255*m*(1-ny2));}
@@ -137,7 +141,6 @@
       // Each tap's offset in its own map, aimed at the target pixel's centre: Chromium takes the pixel nearest to the
       // displaced point, and the 8-bit step (scale/255) stays under a device pixel.
       const own=taps?2*(reach+1):2*A,scale=state.scaleOf?.(own)??own,offset=(m,i,ox,oy)=>put(m,i,Math.round(255*(ox/scale+.5)),oy/scale+.5);
-      if(moves)for(let p=0;p<CW*H;p++)offset(mm,p*4,moves[p*2],moves[p*2+1]);
       if(outs)for(let p=0;p<CW*H;p++)offset(data.om.data,p*4,outs[p*2],outs[p*2+1]);
       if(taps)for(let p=0;p<CW*H;p++)for(let j=0;j<4;j++)offset(taps[j],p*4,offsets[p*8+2*j],offsets[p*8+2*j+1]);
       setMaps(maps,data,{w,h,k,W,H,split},inset);

@@ -932,6 +932,13 @@ Limits and dead ends:
 - Dimming thin lines in a layer of its own (so mid reads it as a texture, not four recomputations) halved mid's cost
   alone but bought nothing once the toolbar shared layers; it moved the look (player lens3 2.77 / 4.13 / 3.46, buttons'
   fit 2.590) and was left out.
+- **Fractional scales** (Spotify forced to 1.25x on the same Mac): recorded scrolling ran 13-24fps on the playlist and
+  ~23 on Home, the glass 32.6ms a frame, 27.5 of it in mid. Without the exact bend, mid smoothed the rim before the thin
+  lines and the halo: the smoothed result was read three times and the thinned one four, so a 36pt circle's mid ran
+  134 passes (24 at 2x). The smoothing now ends the bend layer, whose one-tap map leaves the page outside the glass
+  unshifted (beyond the edge's own pixel, which the clip still shows), so its blurs read the page there as mid's did:
+  glass 11.6ms, Home 60fps, playlist 43-60 (the toolbar's separate sets are what is left), the player within 7/255 on
+  5 px; 2x unchanged.
 
 Rule, with the last section's: **count render passes, not pixels: a primitive is a pass, a result read twice is two,
 and a filter run for each of N small shapes costs N times what one filter over all of them does.**
