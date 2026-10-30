@@ -1,6 +1,6 @@
 // Apple Music's player against mcloud's, over Music's own focused frames (research/fit/bg/mf*.png = the page behind
 // the player, research/fit/apple/mf*.png = Music's frame; player 701x54pt at x 40, top 40.5).
-//   node buttons/player.mjs <outdir> [variant...]      variants: mcloud | new (default both)
+//   node buttons/player.mjs <outdir> [variant...]      variants: mcloud | new | lens3 (default mcloud, new)
 // mcloud: the player as shipped on mcloud's research branch, built from the same functions (lens.js): two layers,
 // ::before bends (#am-glass-bend), ::after does the rest (#am-glass), a 1px transparent border, the CSS hairline.
 // new: the same two layers 12pt larger with the edge read (the page past the edge), the colour gain by luminance
@@ -77,6 +77,10 @@ await page.evaluate(([newState, rimf]) => {
       svg.insertAdjacentHTML('afterbegin', glassFilter('am-glass-bend', glassStates.focused, 'bend', true) + glassFilter('am-glass', glassStates.focused, 'face', true));
       p.append(Object.assign(document.createElement('div'), { className: 'am-glass-rim' }));
       glassLens(p, { ...glassStates.focused, line: 0 }, ['am-glass-bend', 'am-glass']);
+    } else if (variant === 'lens3') {
+      // As mcloud ships it: lgLens's three layers (bend, mid, tone) in a face 12pt larger than the border box.
+      const face = document.createElement('div'), m = newState.margin; face.className = 'lg-glass-face'; Object.assign(face.style, { position: 'absolute', inset: `${-1 - m}px`, zIndex: '-1' });
+      p.append(face); lgLens(face, { state: 'focused', ...newState }); lgRimF(p, rimf);
     } else {
       const state = { ...glassStates.focused, line: 0, ...newState }, m = state.margin;
       svg.insertAdjacentHTML('afterbegin', glassFilter('am-glass-bend', state, 'bend', true) + glassFilter('am-glass', state, 'face', true));
