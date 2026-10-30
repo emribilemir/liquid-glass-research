@@ -921,9 +921,13 @@ antialiases a little differently.
 
 Limits and dead ends:
 
-- On fractional scales (Windows 125%, 150%) a shared layer put the shapes' edges up to a device pixel away from where
-  their own layers land, and snapping the pieces to device pixels did not match it; mcloud shares only on whole-pixel
-  screens and keeps the margin's box for every layer there.
+- On fractional scales (Windows 125%, 150%) a shape's maps are drawn on the device pixels of its own box, so a shared
+  layer needs every shape's box on them: mcloud places the toolbar's shapes on whole device pixels there (at most
+  half a device pixel off the controls' CSS pixels), the hairline's box grows by whole device pixels, and the margin
+  (12px) lands on them at Windows' scales. Edge pixels still differ from per-shape layers (up to ~40/255 at 125%):
+  Chromium antialiases each layer's clip on its own grid, and the per-shape glass itself moved by 42/255 when its
+  `inset(round)` clip became the same `path()`. Side by side the two look the same. At 1.25x the toolbar's glass then
+  costs 1.4ms instead of 9.4 and recorded scrolling holds 60fps on the playlist (per-shape: 44-57).
 - A blur over ~22 device px (11pt at 2x) cost about three times one just under it (15 mids on circles: ~35fps with
   the 15.3pt halo, 60 at 10.8pt). Two blurs of sigma/sqrt(2) (the same Gaussian) helped in isolation but not
   measurably in Spotify. The halos stay as fitted.
