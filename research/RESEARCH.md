@@ -944,6 +944,14 @@ Limits and dead ends:
   glass 11.6ms, Home 60fps, playlist 43-60 (the toolbar's separate sets are what is left), the player within 7/255 on
   5 px; 2x unchanged.
 
+**A press stretches the maps instead of drawing them again** (mcloud, after `6402a43`): every frame of the 0.3s press
+spring resized the shape and redrew all its maps (pixel loops and PNG encodes): 24 presses in Spotify averaged 22-49ms
+frames with ~300 over 25ms. The maps drawn at rest are now stretched about the centre by the glass's growth (the
+margin stays) while the shape is pressed. Held pressed, stretched vs redrawn differed by 0.7-2% of what the press
+itself changes (mean <0.25/255, max 8-24) at 2x and 125%, about the redraw's own run-to-run noise; frames 16.7-17.2ms
+with 5-36 over 25ms. Stretching the whole element with `transform` failed the same test (21-23%): it resamples the page
+under the glass too.
+
 Rule, with the last section's: **count render passes, not pixels: a primitive is a pass, a result read twice is two,
 and a filter run for each of N small shapes costs N times what one filter over all of them does.**
 

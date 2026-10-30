@@ -100,16 +100,27 @@
     for(const image of images){const p=image.dataset.part,u=urls[image.dataset.map][p],d=inset(image);if(u)image.setAttribute('href',u);else image.removeAttribute('href');
       image.setAttribute('x',box[p][0]-d);image.setAttribute('y',-d);image.setAttribute('width',box[p][1]);image.setAttribute('height',h);}
   }
+  // The images as setMaps placed them (rest: the drawn box and them), and the same stretched to a box of w x h: a pressed
+  // shape's maps stretch with it instead of being drawn again on every frame of the spring (pixel loops, PNG encodes).
+  // The box grows by the glass alone (m, its margin, stays), so the maps scale about the centre by the glass's growth.
+  // Held pressed in Spotify, stretched and redrawn glass differed by 0.7-2% of what the press changes (mean <0.25/255).
+  const placed=(w,h,images,inset=()=>0)=>({w,h,k:devicePixelRatio||1,images:images.map(e=>[e,...['x','y','width','height'].map(a=>+e.getAttribute(a)),inset(e)])});
+  const stretch=(rest,w,h,m)=>{const sx=(w-2*m)/(rest.w-2*m),sy=(h-2*m)/(rest.h-2*m),set=(e,a,v)=>{v=String(+v.toFixed(4));if(e.getAttribute(a)!==v)e.setAttribute(a,v);};
+    for(const [e,x,y,iw,ih,d] of rest.images){set(e,'x',w/2+(x+d-rest.w/2)*sx-d);set(e,'y',h/2+(y+d-rest.h/2)*sy-d);set(e,'width',iw*sx);set(e,'height',ih*sy);}};
   // build (optional) rebuilds the filters before each redraw: the player's change with the screen scale. drawn
   // (optional) runs after each drawing. state.scaleOf (mcloud's shared()) turns the displacement scale this shape needs into
-  // the one every shape of its filter uses. inset: passed to setMaps. Returns a function that draws again.
+  // the one every shape of its filter uses. state.stretch (mcloud's ToolbarGlass): true while the shape is pressed. inset: passed
+  // to setMaps. Returns a function that draws again.
   function glassLens(node,state,filterIds,build,drawn,inset) {
-    let glassSize='';
+    let glassSize='',rest=null;
     const hl=state.highlight,highlightAt=edge=>{const f=edge/.5;if(f>=hl.length-1)return 0;const i=Math.floor(f);return (hl[i]+(hl[i+1]-hl[i])*(f-i))/hl[0];},fade=u=>1-u*u*(3-2*u);
     const draw=force=>{
       // Drawn at device resolution and redrawn only on resize or a change of screen: the bend and the highlight
       // live in the outermost few pixels. Scrolling frame times were measured unchanged against a CSS-size map.
-      const {width:w,height:h}=node.getBoundingClientRect(),k=devicePixelRatio||1;if(!w||!h||(!force&&glassSize===w+'x'+h+'@'+k))return;glassSize=w+'x'+h+'@'+k;
+      const {width:w,height:h}=node.getBoundingClientRect(),k=devicePixelRatio||1;if(!w||!h)return;
+      // Pressed, or back at the drawn size: the drawn maps, stretched to the box.
+      if(!force&&rest?.k===k&&(glassSize===w+'x'+h+'@'+k||state.stretch?.())){stretch(rest,w,h,state.margin||0);drawn?.();return;}
+      glassSize=w+'x'+h+'@'+k;
       build?.();const maps=filterIds.flatMap(id=>[...glass.querySelectorAll(`#${id} feImage`)]),shifts=filterIds.flatMap(id=>[...glass.querySelectorAll(`#${id} feDisplacementMap`)]);
       // margin: the glass is the box inset by M on every side; the rest is page the filter may read (clipped away).
       const M=state.margin||0,gw=w-2*M,gh=h-2*M,W=Math.round(w*k),H=Math.round(h*k),r=gh/2,A=state.lensA*r,L=state.lensH*r;
@@ -144,7 +155,7 @@
       if(moves)for(let p=0;p<CW*H;p++)offset(mm,p*4,moves[p*2],moves[p*2+1]);
       if(outs)for(let p=0;p<CW*H;p++)offset(data.om.data,p*4,outs[p*2],outs[p*2+1]);
       if(taps)for(let p=0;p<CW*H;p++)for(let j=0;j<4;j++)offset(taps[j],p*4,offsets[p*8+2*j],offsets[p*8+2*j+1]);
-      setMaps(maps,data,{w,h,k,W,H,split},inset);
+      setMaps(maps,data,{w,h,k,W,H,split},inset);rest=placed(w,h,maps,inset);
       for(const shift of shifts)shift.setAttribute('scale',scale);
       drawn?.();
     };
