@@ -831,6 +831,49 @@ per frame); caching maps per size step or scaling the map instead of redrawing w
 glass here: **one expensive blur per layer, and never read a blurred result twice in one filter.** (A first try put
 the layers in the DOM in reverse, tone before bend, and scored 6.64: the order matters, bend first.)
 
+## Performance in Spotify: map bytes and the glow's box (2026-10-30)
+
+The three-layer lens ran at 60fps in `bench.mjs`, but in Spotify (mcloud `01b7214`, macOS, Chromium on Graphite/Dawn,
+1146x770 at 2x) the player dropped frames whenever something moved over it. Measured with mcloud's
+`dev/client/fps.mjs` (rAF frame times with DevTools attached, then `ps` CPU and `ioreg` GPU use with it detached;
+median of 2 rounds, music muted):
+
+| fps (GPU-process CPU, % of a core) | playing | title marquee | scrubber hover | page scroll |
+| --- | --- | --- | --- | --- |
+| player glass hidden | 60 (8) | 60 (14) | 60 (12) | 60 (64) |
+| old single-filter player (`9f419bb`) | 53 (16) | 57 (99) | 54 (46) | 57 (96) |
+| three-layer lens (`01b7214`) | 50 (21) | 38 (75) | 45 (45) | 34 (78) |
+| + glow clip only | 51 (16) | 42 (44) | 46 (30) | 39 (82) |
+| + map pieces and glow clip | **60** (11) | **60** (32) | **60** (20) | **58** (82) |
+
+**Map bytes, not filter maths.** A trace shows the GPU process waiting on the GPU (`WaitForCommandsToBeScheduled::Dawn`)
+and the renderer's compositor busy; neither the filter's primitives nor its blurs explain it. Swapping the player's
+16 `feImage` maps (1448x156 device px each, ~14MB a frame) for 4x4 images in the live client gave 60fps; half
+resolution did too; shrinking only the 10 bend maps or only the other 6 helped partly (44 and 39fps). Chromium sends
+a filter's images again with every frame that draws under it (serialised with the compositor frame, made into new
+images and uploaded), so their bytes are the cost. Every map varies along x only inside the round ends plus the
+margin; between them each column is the same (the bend there is purely vertical: the bilinear taps' fractions are 0
+and their offsets constant). `lens.js` now draws each map as three `feImage`s merged by `feMerge`: both ends at
+device resolution (`ceil((margin + r) * dpr) + 1` columns) and the middle column stretched across (`mapColumns`,
+`setMaps`; the hairline map the same, its middle all transparent). ~1/9 of the bytes at player size; `player.mjs`
+frames are byte-identical (lens3 2.90 / 4.58 / 3.47, mcloud 4.75 / 8.53 / 4.78). Where the ends meet (round buttons)
+the map stays whole. The layered glass also stops building the all-white edge-line map (`line: 0`).
+
+**The glow's box.** After that, the marquee still cost ~75% of a core when the toolbar's glass was on and ~30% when
+it was hidden, though the toolbar lies far from the damage (`root_damage_rect` stays the player's 1404x112). Hiding
+parts in turn pointed at mcloud's sidebar edge glow, a `blur(56px)` backdrop-filter whose box reaches 140px past the
+sidebar to read the page there and overlapped the player's left end. Per frame (trace): 24 `saveLayer`s and 467
+Graphite passes; 8.5 and 117 with the toolbar glass hidden; no layers and 4 passes with the player's glass off (the
+damage is then just the 480x34 marquee and touches no backdrop filter). A plain CSS blur on the player does the same
+(21 layers): any backdrop filter in the damage re-runs the glow, and re-running the glow re-runs every backdrop filter
+inside its box, the toolbar's back/forward and Home glass among them. `clip-path: inset(0 140px 0 0)` on the glow
+keeps its backdrop read past the sidebar but cuts its draw (and its quad) to the sidebar, where its mask already
+ends: screenshots over Search's tiles are identical, and the cross re-runs stop. Rule: **a backdrop-filter's box,
+not its visible output, decides what it drags into each redraw; clip it to where it shows.**
+
+Scrolling still redraws everything under every glass (the page moves under all of them): 58fps, the player's glass
+adding ~18% of a core over the rest.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
