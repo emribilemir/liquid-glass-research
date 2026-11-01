@@ -1,11 +1,11 @@
 // The menu lens in Chromium (prototype of what mcloud ships as menuGlass in theme.js). Fitted to macOS 27's NSMenu over
 // 45-degree stripes (research/RESEARCH.md, "Menus"): a blur bent near the rim, the bend's direction turning over the
-// last ~40pt before each corner, an optional darken halo (off: shipped without it); the tone is the CSS fill
-// (rgba(100,100,100,.39)), the rim CSS shadows. Works in a page or injected over CDP.
+// last ~40pt before each corner, an optional darken halo (off: shipped without it), then Apple's tone by
+// luminance (tone:false leaves it to a CSS fill such as rgba(100,100,100,.39)); the rim is CSS shadows. Works in a page or injected over CDP.
 // window.__amMenuGlass(params) installs or re-tunes it; returns {attach, detach, params}.
 window.__amMenuGlass=(over={})=>{
   const g=window.__amMG||(window.__amMG={slots:[],cache:new Map()});
-  const P=g.P=Object.assign(g.P||{blur:6.8,radius:13,turn:40,lensAt:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,15,18],lens:[46,41,34,29,24.2,20.6,17.5,14.8,12.35,10.1,8.2,6.5,5.15,3.9,1.95,0],strength:1,darken:0,darkenBlur:30},over);
+  const P=g.P=Object.assign(g.P||{blur:6.8,radius:13,turn:40,lensAt:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,15,18],lens:[46,41,34,29,24.2,20.6,17.5,14.8,12.35,10.1,8.2,6.5,5.15,3.9,1.95,0],strength:1,darken:0,darkenBlur:30,tone:true},over);
   if(over.lens||over.lensAt||over.radius||over.turn||over.strength)g.cache.clear();
   const NS='http://www.w3.org/2000/svg';
   if(!g.svg){g.svg=document.createElementNS(NS,'svg');g.svg.setAttribute('aria-hidden','true');g.svg.setAttribute('width','0');g.svg.setAttribute('height','0');g.svg.style.position='absolute';document.body.append(g.svg);}
@@ -30,7 +30,20 @@ window.__amMenuGlass=(over={})=>{
     const t={N,tl:cut(0,0,N,N),t:cut(N,0,1,N),tr:cut(N+1,0,N,N),l:cut(0,N,N,1),r:cut(N+1,N,N,1),bl:cut(0,N+1,N,N),b:cut(N,N+1,1,N),br:cut(N+1,N+1,N,N)};
     g.cache.set(key,t);return t;
   };
-  const filterXML=id=>`<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feFlood flood-color="rgb(128,128,128)" result="n"/>${pieces.map(p=>`<feImage data-piece="${p}" result="${p}" preserveAspectRatio="none"/>`).join('')}<feMerge result="map"><feMergeNode in="n"/>${pieces.map(p=>`<feMergeNode in="${p}"/>`).join('')}</feMerge><feGaussianBlur in="SourceGraphic" stdDeviation="${P.blur}" edgeMode="duplicate" result="soft"/><feDisplacementMap in="soft" in2="map" xChannelSelector="R" yChannelSelector="B" scale="${(2*peak()).toFixed(2)}" result="core"/>${P.darken?`<feGaussianBlur in="core" stdDeviation="${P.darkenBlur}" edgeMode="duplicate" result="halo"/><feBlend in="core" in2="halo" mode="darken" result="dk"/><feComposite in="core" in2="dk" operator="arithmetic" k2="${(1-P.darken).toFixed(3)}" k3="${P.darken}"/>`:''}</filter>`;
+  // Apple's menu tone (research/RESEARCH.md, "Menus", tone): colour steps only, folded by Skia into one pass.
+  const toneXML=(()=>{
+    const pts=[[0,32],[31,57],[63,82],[95,105],[127,122],[159,135],[191,143],[223,147],[255,146]],k=[.2126,.7152,.0722],g=1.05;
+    const T=L=>{let i=0;while(i<pts.length-2&&L>pts[i+1][0])i++;const [a,ta]=pts[i],[b,tb]=pts[i+1];return ta+(tb-ta)*(L-a)/(b-a);};
+    const U=Array.from({length:65},(_,i)=>{const L=Math.max(0,2*i/64-1)*255;return (T(L)-L)/255;}),lo=Math.min(...U),s=Math.max(...U)-lo;
+    const row=c=>[0,1,2].map(j=>((j===c?g:0)+(1-g)*k[j]).toFixed(4)).join(' ')+' 0 0';
+    const floor=`type="table" tableValues="${[32/255,32/255,...Array.from({length:7},(_,i)=>(i+2)/8)].map(v=>v.toFixed(4)).join(' ')}"`;
+    return `<feColorMatrix values="${row(0)} ${row(1)} ${row(2)} ${k.map(v=>(v/2).toFixed(4)).join(' ')} 0 .5"/>`
+      // alpha stays in [.5, 1] after the table too: a colour stored premultiplied by an alpha near 0 is lost
+      +`<feComponentTransfer><feFuncA type="table" tableValues="${U.map(u=>(.5+.5*(u-lo)/s).toFixed(4)).join(' ')}"/></feComponentTransfer>`
+      +`<feColorMatrix values="1 0 0 ${(2*s).toFixed(4)} ${(lo-s).toFixed(4)} 0 1 0 ${(2*s).toFixed(4)} ${(lo-s).toFixed(4)} 0 0 1 ${(2*s).toFixed(4)} ${(lo-s).toFixed(4)} 0 0 0 0 1"/>`
+      +`<feComponentTransfer><feFuncR ${floor}/><feFuncG ${floor}/><feFuncB ${floor}/></feComponentTransfer>`;
+  })();
+  const filterXML=id=>`<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feFlood flood-color="rgb(128,128,128)" result="n"/>${pieces.map(p=>`<feImage data-piece="${p}" result="${p}" preserveAspectRatio="none"/>`).join('')}<feMerge result="map"><feMergeNode in="n"/>${pieces.map(p=>`<feMergeNode in="${p}"/>`).join('')}</feMerge><feGaussianBlur in="SourceGraphic" stdDeviation="${P.blur}" edgeMode="duplicate" result="soft"/><feDisplacementMap in="soft" in2="map" xChannelSelector="R" yChannelSelector="B" scale="${(2*peak()).toFixed(2)}" result="core"/>${P.darken?`<feGaussianBlur in="core" stdDeviation="${P.darkenBlur}" edgeMode="duplicate" result="halo"/><feBlend in="core" in2="halo" mode="darken" result="dk"/><feComposite in="core" in2="dk" operator="arithmetic" k2="${(1-P.darken).toFixed(3)}" k3="${P.darken}"/>`:''}${P.tone?toneXML:''}</filter>`;
   const place=slot=>{
     const node=slot.node;if(!node)return;const w=node.offsetWidth,h=node.offsetHeight,k=devicePixelRatio||1;if(!w||!h)return;
     const C=Math.max(1,Math.min(P.turn,Math.floor(Math.min(w,h)/2*k)/k)),t=tiles(k,C),c=t.N/k,f=slot.filter;

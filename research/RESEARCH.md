@@ -1018,7 +1018,7 @@ lens +1.2-1.8ms a frame over no menu, without the halo +0.4-0.8, the old frosted
 (frame rate fixed at 60, GPU %): no menu 62, lens 68, no halo 65, old 67, within the ±8 noise. With nothing moving under
 it a menu is not redrawn. On real Spotify pages the halo changed the menu by 0.2-1.6 levels on average (99th percentile
 5-21), over Apple's stripes by 7.5 (it darkens bright detail next to dark); mcloud's branch drops it
-([halo-spotify.png](menus/halo-spotify.png)).
+([halo-spotify.png](menus/halo-spotify.png)); see the tone below, which mattered far more.
 
 **Layout and behaviour** ([macos27-menus-labelled.png](menus/macos27-menus-labelled.png), lab app `menulab`; Music's
 own captures): rows 24pt, 13pt text, padding 5pt, separators 1pt inset ~16pt, highlight pill inset 5pt with ~8pt
@@ -1027,6 +1027,35 @@ cascade right with their first row level with the parent row, over the menu's ed
 fades ~0.2s. Plain menus have no icons (macOS 27 hides SF Symbols); Music keeps them on some groups (Play, Shuffle, Play
 Next, Create Station, Share), drawn in the label colour (peak 230-235, the same as the text). Spotify's menu icons are
 a fixed grey (150) under near-white text ([icons-spotify.png](menus/icons-spotify.png)).
+
+**Tone: by luminance, not a fill (2026-11-01, later).** The first tone (a CSS fill, `0.611·x + 38.7`) came from two
+points on dark and mid backgrounds. With `refrlab-image` (refrlab over any PNG, focused) over 9 flat greys, 5 colours and
+5 surfaces, Apple's menu compresses the bright end: grey 0 → 32, 31 → 57, 63 → 82, 95 → 105, 127 → 122, 159 → 135,
+191 → 143, 223 → 147, 254 → 146; and it keeps the hue, scaling the colour around the luminance by a gain that falls with
+it (×1.10 at L 90, ×0.93 at 160, ×0.83 at 207): red (202,59,51) → (224,67,58), yellow (235,211,80) → (169,149,41). The
+same kind of tone as the player's (`tone(L) + gainL(L)·(c − L)`). Interior error over all 16 backgrounds (`menus/` model,
+then Chromium):
+
+| | no halo | old halo | page halo |
+| --- | --- | --- | --- |
+| CSS fill | 19.4 | 18.8 | 18.9 |
+| luminance tone + gain(L) | 3.3 | 3.1 | 3.2 |
+
+![Apple, the CSS fill and Apple's tone over test surfaces](menus/tone-surfaces.png)
+
+Order matters: the tone after the blur (toning the page first and blurring after: white page 1.9 → 11.9). A tone per
+channel ruins colour (red 47). A gain that depends on L needs the bent page twice (or a second layer); with a constant
+gain of 1.05 and no channel under 32 the whole tone is colour steps that Skia folds into one pass reading the bent page
+once: 4.08 in the model, **4.23 in Chrome** over the 16 backgrounds (the CSS fill 19.6). The chain: a matrix (colour
+widened ×1.05 around L, and L carried in alpha as L/2 + 1/2), an alpha table (T(L) − L, kept in [.5, 1]: an alpha
+near 0 lost the colour stored premultiplied by it, and white came out 32), a matrix adding it back (alpha 1), a 32
+floor per channel. In Spotify, 60fps, a menu open while the page scrolls under it: GPU 82.1% without the menu, 82.1%
+with the toned lens, 83.9% with the fill (noise ±2). The darken halo matters little once the tone is right.
+
+![Spotify's menu over a cover: the CSS fill and Apple's tone](menus/tone-spotify.png)
+
+Pitfall: `screencapture` PNGs carry a Display P3 profile, which Chrome converts on display (red 202,60,51 shown as
+220,41,40); strip it before comparing Chrome renders with the captured numbers.
 
 **Behind-window glass cannot be measured in a covered window.** To ask whether Music's macOS 27 queue panel (an
 edge-to-edge right panel, the same flat (42,38,38) as the sidebar; content narrows instead of passing under it) is glass,
