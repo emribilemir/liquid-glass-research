@@ -955,6 +955,86 @@ under the glass too.
 Rule, with the last section's: **count render passes, not pixels: a primitive is a pass, a result read twice is two,
 and a filter run for each of N small shapes costs N times what one filter over all of them does.**
 
+## Menus: macOS 27's NSMenu glass (2026-11-01)
+
+Context menus on macOS 27.0.1 at the clearest Liquid Glass setting (`NSGlassTintAmount` 0), dark mode, and mcloud's
+copy for its own menus and Spotify's. Tools in `tools/menus/` (Swift labs) and `menus/` (fit, Chromium lens, compare);
+captures in `research/menus/`.
+
+**The rim refracts; judging by eye missed it.** Over photos the heavy blur hides the bend, and a first look said there
+was none. Over 45° black/white stripes (24pt stripes, 48pt period) the stripes kink along every edge, in a native
+`NSMenu` from a focused lab app (`refrlab`, made frontmost through System Events: a CLI's own `activate` is ignored),
+beside an `NSGlassEffectView` in the same window, and in **Apple Music's own menu** with Music focused, opened by a real
+right-click so that it hung past Music's window over a stripes window ordered below it (`stripeswin`, `musicrefr`).
+Apple Music's menus are plain `NSMenu`s ([refraction.png](menus/refraction.png)).
+
+![Native menu, glass reference and Apple Music's menu over stripes](menus/refraction.png)
+
+**Fit** (`menus/fit.py`, the native capture at 2x, text rows and the outer 1.25pt masked, 121k pixels). The model is
+what one Chromium filter can do: blur, then an inward displacement by distance to the rounded-rect edge, then a tone.
+The stripes alone cannot separate tone from blur, so the tone is fixed from flat colours (#1e1e1e → #393939, bright
+artwork ×0.8): `0.611·x + 38.7`, which is an `rgba(100,100,100,.39)` fill over the bent, blurred page.
+
+- Shift (pt, inward: the rim shows the page from further inside) by distance from the edge: 2 → 34, 3 → 29, 4 → 24,
+  5 → 20.6, 6 → 17.5, 7 → 14.8, 8 → 12.4, 9 → 10.1, 10 → 8.2, 11 → 6.5, 12 → 5.2, 13 → 3.9, 15 → 1.95, 18 → 0; the
+  outer 0-1pt extrapolated (41-46). Shifts are periodic in the stripes (48pt vertically), but the solution was the same
+  from every start, in both filter orders and every corner model. Close to the button lens's arc
+  `A(1 - sqrt((2-t)t))` with A ≈ 64pt, L ≈ 18pt.
+- Corners: the bend's direction turns over the last **40pt** before each corner (normal toward the box inset by 40pt),
+  not square to the edge. Error in the TR/BL corners (the only ones where 45° stripes show a diagonal shift), by how
+  far before the corner the direction starts turning: 13pt 16.6, 18pt 14.7, 30pt 8.5, **40pt 6.8**, 55pt 7.6, 70pt 8.3.
+- Blur σ = 6.8pt (stripes stay visible in the middle; a 28pt CSS blur, the first guess from photos, erases them).
+- A darken halo (min with a 30pt blur, mixed at 57%, as on the player) takes the fit from 10.3 to 8.8.
+- Rim, measured per edge on the capture: a near-black device pixel outside the glass (~85%), then 1pt brighter, top and
+  bottom equal (+30% toward white on the first device pixel, +20% on the second), the sides weaker (+11%, +7%). The
+  corner is ~13pt, slightly continuous (longer tangent than a circle).
+
+![Apple's menu, the model, their difference](menus/fit-apple-model-diff.png)
+
+**Chromium** (`menus/menu-glass.js`; mcloud's `menuGlass`). One filter per open menu on the menu's own
+`backdrop-filter`, as the toast does: blur, then `feDisplacementMap` with the one-image map encoding (R=G=x,
+B=y, compensated for P3's blue row). The map is nine pieces: four corners (40×40pt at device resolution), four one
+device pixel wide edges stretched along the menu, and a neutral flood between, drawn once per screen scale and corner
+size, so opening a menu of any size only sets eight `x/y/width/height`s; no pixel loops or PNG encodes on open, and few
+bytes per frame. Over Apple's own stripes capture (`menus/render.mjs`, `menus/compare.py`) the difference to Apple is
+9.65/255 (centre 6.7, rim band 13.5) with the halo and 15.6 (centre 14.3) without; the rim's profile matches (top
+edge, device pixels from the outside: Apple 21/161/145/116, Chromium 24/161/146/116).
+
+![Apple's menu and the Chromium lens over the same stripes](menus/apple-vs-chromium.png)
+
+Pitfalls found on the way:
+
+- A one-pixel-wide `drawImage` cut of a canvas left its last rows transparent in Chrome; cut with `putImageData`.
+- Spotify nests some submenus (Add to playlist) inside the parent menu's list, in their own `[data-tippy-root]` under
+  an `li`. A `backdrop-filter` on the list makes it the containing block of that submenu, which then opened at the wrong
+  place and was clipped away by the list's scrolling. The glass goes on the tippy root's `::before` instead (the root's
+  transform already makes it the stacking context and the containing block).
+- `offsetWidth` rounds; Spotify's menus are fractional (255.4px). The ResizeObserver's `borderBoxSize` places the pieces.
+
+**Cost in Spotify** (MacBook Air, vsync off, `cost.mjs`; the Air throttles as it heats, so rounds drifted from 8 to 16
+ms a frame and only differences within a round count). A menu open while the page scrolls under it, cool rounds: the
+lens +1.2-1.8ms a frame over no menu, without the halo +0.4-0.8, the old frosted menu (CSS blur 24) +0.4-0.6; hot rounds
++3-4ms for all. So the halo is about half of the lens's extra cost. A menu over the player while its title scrolls
+(frame rate fixed at 60, GPU %): no menu 62, lens 68, no halo 65, old 67, within the ±8 noise. With nothing moving under
+it a menu is not redrawn. On real Spotify pages the halo changed the menu by 0.2-1.6 levels on average (99th percentile
+5-21), over Apple's stripes by 7.5 (it darkens bright detail next to dark); mcloud's branch drops it
+([halo-spotify.png](menus/halo-spotify.png)).
+
+**Layout and behaviour** ([macos27-menus-labelled.png](menus/macos27-menus-labelled.png), lab app `menulab`; Music's
+own captures): rows 24pt, 13pt text, padding 5pt, separators 1pt inset ~16pt, highlight pill inset 5pt with ~8pt
+corners in the accent (Music's pink-red); once focus moves into a submenu the parent row turns neutral grey; submenus
+cascade right with their first row level with the parent row, over the menu's edge by ~5pt; opening is instant, closing
+fades ~0.2s. Plain menus have no icons (macOS 27 hides SF Symbols); Music keeps them on some groups (Play, Shuffle, Play
+Next, Create Station, Share), drawn in the label colour (peak 230-235, the same as the text). Spotify's menu icons are
+a fixed grey (150) under near-white text ([icons-spotify.png](menus/icons-spotify.png)).
+
+**Behind-window glass cannot be measured in a covered window.** To ask whether Music's macOS 27 queue panel (an
+edge-to-edge right panel, the same flat (42,38,38) as the sidebar; content narrows instead of passing under it) is glass,
+colour bands were ordered just below Music's window (`behindwin`). Neither `screencapture -l` nor a ScreenCaptureKit
+capture of only those windows (`sck`) changed; but neither did a control, our own `NSVisualEffectView` (.hudWindow,
+state .active) over the bands (`materialcheck`). The WindowServer does not compute behind-window materials for an
+occluded window, so this needs the window visible and focused.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
@@ -963,3 +1043,6 @@ and a filter run for each of N small shapes costs N times what one filter over a
 - The highlight table and the dark/bright edge shading are fitted on a dark page; light pages are less covered.
 - Toolbar buttons: do `.glassEffect(.regular.interactive())`, `.buttonStyle(.glass)` and `NSButton` `.glass` move like
   Music's toolbar items? A lab app with the same step scripts (`tools/buttons/rec` needs a bundle id switch) would tell.
+- Menus: Apple's top edge bent about twice as far as the bottom in the first phase reading (14px: 33 vs 15); the fit
+  found the top only ×1.05. Text rows next to the top edge may have skewed the reading.
+- Menus: is Music's macOS 27 queue panel behind-window glass? Needs the test above with Music visible and focused.
