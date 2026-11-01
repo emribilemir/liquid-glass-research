@@ -1064,6 +1064,19 @@ capture of only those windows (`sck`) changed; but neither did a control, our ow
 state .active) over the bands (`materialcheck`). The WindowServer does not compute behind-window materials for an
 occluded window, so this needs the window visible and focused.
 
+Then with Music focused and on screen, the bands just below its window: they showed nowhere, so neither the queue
+panel nor the sidebar is behind-window glass in macOS 27. What changed between the two frames was only the window's top
+band (toolbar, the top of the sidebar and of the queue panel), following the artist page's animated header art, which
+macOS 27 extends under the panels and blurs (background extension). So the queue panel is translucent over the window's
+own content at the top and flat below it.
+
+Pitfalls: a lab app started from a CLI is not made frontmost by its own `activate` (bring it forward through System
+Events); captures taken that way show the unfocused, diffuse glass (64pt text became blobs) and must not be fitted.
+Measure a tone over flat greys and colours, not two points: two points made the menu's tone look linear.
+
+**Shipped** in mcloud [#57](https://github.com/bulutakbulutt/mcloud/pull/57) (`f30b707`): the bend, Apple's tone as one
+folded pass, no halo, the rim; Spotify's menu icons in the label colour.
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
@@ -1074,4 +1087,5 @@ occluded window, so this needs the window visible and focused.
   Music's toolbar items? A lab app with the same step scripts (`tools/buttons/rec` needs a bundle id switch) would tell.
 - Menus: Apple's top edge bent about twice as far as the bottom in the first phase reading (14px: 33 vs 15); the fit
   found the top only ×1.05. Text rows next to the top edge may have skewed the reading.
-- Menus: is Music's macOS 27 queue panel behind-window glass? Needs the test above with Music visible and focused.
+- Menus: the tone's colour gain depends on luminance (×1.10 to ×0.83); one folded pass allows a constant 1.05 only. A second layer
+  reading the bent page as a texture would allow it (3.3 instead of 4.2 over 16 backgrounds); not measured for cost.
