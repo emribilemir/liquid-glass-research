@@ -1086,7 +1086,8 @@ NSRequiresAquaSystemAppearance -bool yes`, the system stayed dark), macOS 27, Li
 2x, `screencapture -o -l<window>`. Pages driven by AX and `music://` URLs without bringing Music forward
 (`tools/light/mscroll.swift` sets the content scroll bar). Scenes: Recently Added (toolbar over its white band, player
 over covers), an album page (Back and Share/More over white), an artist page (the same buttons over a flat brown page,
-rgb 121,78,67, L 87). mcloud was measured in the Spotify client with the same flat colours laid under its glass
+rgb 121,78,67, L 87). mcloud was measured in the Spotify client with the same flat colours laid under its glass (in
+this first round as CSS `rgb()`, i.e. sRGB: the brown landed as P3 115,80,69, L 2 lower; see the pitfall below)
 (`tools/light/bg.sh`: a fixed layer inside `#am-toolbar-glass`, the toolbar's scroll shade hidden; another under the
 player). Profiles along rays from the 36pt button's centre every 45 degrees, sampled on pixel centres
 (`tools/light/radial.py`; sampling on pixel corners blurs a 1px line into two). Raw captures: `research/local/light/`.
@@ -1118,8 +1119,46 @@ page under the glass (117 instead of 87). Compare light measurements with the pa
 shade inside the edge in Music's light glass is the outline itself (and, over busy content, the bend reading darker
 content near the rim).
 
-**Not matched yet:** over the brown page Music's light glass keeps more of the page's hue (face 196,146,132, mcloud's
-greyer); a faint shadow under Music's toolbar buttons (about -3 on white, ~15px); and in its search field the
+**Over coloured pages** (13 flat pages: white, three greys, red, orange, yellow, green, teal, blue, purple, pink,
+brown). Music's light glass on flat colours comes from BtnLab forced light (`tools/light/lab/BtnLabLight.swift`: the
+same `.glassEffect(.regular)` with `.aqua` and a light colour scheme; `cap.sh` captures only while key), checked against
+Music's own button first: white top/end/bottom 235/191/232 (Music 235/190/231), brown 72/39/71 (71/40/72), face
+195,145,132 (196,146,132). mcloud got the same pages under its toolbar and player (`tools/light/colours.sh`).
+**Pitfall:** the pages must be the same numbers in both captures. BtnLab tags its background with the screen's colour
+space, so its pixels are Display P3 values; a CSS `rgb()` page in Spotify is sRGB and lands as other P3 numbers (red
+230,60,60 captured as 212,75,68). The first round compared different pages and made mcloud's glass look far greyer
+than it is; lay the pages as `color(display-p3 r g b)` (the second round, `p3-*` captures).
+
+| page | face: Music | mcloud before | after (saturate 1.35) | top line Music / before / after |
+| --- | --- | --- | --- | --- |
+| white | 251,251,251 | 248,248,248 | 248,248,248 | 235 / 255 / 234 |
+| grey200 | 221,221,221 | 220,220,220 | 220,220,220 | 179 / 200 / 179 |
+| grey128 | 180,180,180 | 180,180,180 | 180,180,180 | 109 / 128 / 110 |
+| dark40 | 127,127,127 | 129,129,129 | 129,129,129 | 33 / 40 / 32 |
+| red | 255,118,118 | 255,129,129 | 255,120,120 | 83 / 96 / 81 |
+| orange | 255,185,57 | 255,185,99 | 255,182,66 | 143 / 162 / 142 |
+| yellow | 255,231,53 | 255,234,96 | 255,236,50 | 191 / 211 / 191 |
+| green | 88,228,123 | 119,238,137 | 89,249,113 | 130 / 148 / 129 |
+| teal | 68,219,242 | 106,223,254 | 73,231,255 | 126 / 144 / 126 |
+| blue | 90,172,255 | 116,173,255 | 98,175,255 | 88 / 104 / 88 |
+| purple | 213,130,255 | 216,138,255 | 235,129,255 | 80 / 94 / 79 |
+| pink | 255,158,216 | 255,161,220 | 255,153,232 | 130 / 149 / 130 |
+| brown | 195,145,132 | 191,147,137 | 203,144,130 | 72 / 86 / 73 |
+
+(Pages: white, greys 200/128/40, red 230,60,60, orange 245,150,40, yellow 250,215,60, green 60,180,90, teal 40,170,190,
+blue 40,110,230, purple 140,70,200, pink 240,120,170, brown 121,78,67, as P3 numbers. Faces on the 36pt button, outside
+mcloud's icon; the player's faces were fitted too.) The hairline fit holds on every colour (top within 2, ends within 7).
+The face: greys match; colours are paler than Music's (probably because the dark tone is mapped onto the light one
+through one table per channel, which loses chroma; not isolated). A saturate step after that table (`feColorMatrix type="saturate"`, light only) fitted over the 13
+faces of the button and the player: 1.0 -> 8.3 per channel, 1.2 -> 5.9, **1.35 -> 5.0**, 1.4 -> 5.2, 1.6 -> 8.4 (the
+in-client captures at 1.2/1.4/1.6 agreed with the offline fit). Render passes per frame in the client (Graphite
+`CommandBuffer::addRenderPass`, 4s traces while the marquee ran): 79.0 without the step, 78.7 with it. What is left is
+hue (green: Music 88,228,123, mcloud 89,249,113: brighter and less blue) and the light inside the top edge, which
+is -15 to +9 off Music per colour (green the furthest: +6 against +21; greys +7/+9; dark grey -8).
+
+![Over 13 flat pages, light](compare/light/colours-light.png)
+
+**Not matched yet:** a faint shadow under Music's toolbar buttons (about -3 on white, ~15px); and in its search field the
 magnifier and placeholder are the same secondary grey (L 125 over 250, i.e. black at ~50%), 12.5pt, while the filter
 button's icon is black: mcloud's magnifier is near black (43) and 16pt, its placeholder 87.
 
@@ -1144,7 +1183,7 @@ mcloud in cyan):
   with Music scrolling. A recording of Music scrolling by hand would close that gap.
 - The highlight table and the dark/bright edge shading are fitted on a dark page; light pages are less covered (the light
   appearance's edge light was checked on white and one brown page only, 2026-11-02).
-- Light appearance: the hue Music's light glass keeps over coloured pages, the shadow under toolbar buttons, pause's box.
+- Light appearance: the hue left over coloured pages (green), the shadow under toolbar buttons, pause's box.
 - Toolbar buttons: do `.glassEffect(.regular.interactive())`, `.buttonStyle(.glass)` and `NSButton` `.glass` move like
   Music's toolbar items? A lab app with the same step scripts (`tools/buttons/rec` needs a bundle id switch) would tell.
 - Menus: Apple's top edge bent about twice as far as the bottom in the first phase reading (14px: 33 vs 15); the fit
