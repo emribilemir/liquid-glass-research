@@ -1077,12 +1077,74 @@ Measure a tone over flat greys and colours, not two points: two points made the 
 **Shipped** in mcloud [#57](https://github.com/bulutakbulutt/mcloud/pull/57) (`f30b707`): the bend, Apple's tone as one
 folded pass, no halo, the rim; Spotify's menu icons in the label colour.
 
+## Light appearance: the hairline, the edge light and the player's glyphs (2026-11-02)
+
+A user of mcloud reported that the light-mode glass "misses a light border" at the top and bottom (mcloud #74,
+Glass Effect Balanced or Full). Measured on Music's own window forced light (`defaults write com.apple.Music
+NSRequiresAquaSystemAppearance -bool yes`, the system stayed dark), macOS 27, Liquid Glass slider at 0, **focused**
+(activated only while the Mac had been idle 8s or more, traffic lights checked in every capture: `tools/light/burst.sh`),
+2x, `screencapture -o -l<window>`. Pages driven by AX and `music://` URLs without bringing Music forward
+(`tools/light/mscroll.swift` sets the content scroll bar). Scenes: Recently Added (toolbar over its white band, player
+over covers), an album page (Back and Share/More over white), an artist page (the same buttons over a flat brown page,
+rgb 121,78,67, L 87). mcloud was measured in the Spotify client with the same flat colours laid under its glass
+(`tools/light/bg.sh`: a fixed layer inside `#am-toolbar-glass`, the toolbar's scroll shade hidden; another under the
+player). Profiles along rays from the 36pt button's centre every 45 degrees, sampled on pixel centres
+(`tools/light/radial.py`; sampling on pixel corners blurs a 1px line into two). Raw captures: `research/local/light/`.
+
+**The hairline goes all the way round in light.** In dark the line just outside the glass fades out along the top and
+bottom; in light Music draws it everywhere, a third as strong along the top and bottom as at the round ends:
+
+| page under the glass | top / bottom | round end | 45 degrees |
+| --- | --- | --- | --- |
+| white 255 | 235 / 231 | 190 | 235 |
+| brown 87 | 71 / 72 | 40 | 72-83 |
+
+At the round ends over other pages: 114 -> 56, 106 -> 53, 100 -> 47, 26 -> 8, i.e. about L x (.25 + .5 x (L/255)^.8)
+at full coverage. The dark appearance's line (BtnLab: 128 -> 68, 255 -> 123) is right at mid tones but far too dark on
+white: mcloud's light toolbar showed 150 at the ends over white and nothing along the top. Shipped in mcloud (light only,
+`lightRim` in theme.js): the hairline filter's table becomes L x (.2 + .5 x L^.8) (what the buttons' weight .85 needs)
+and its weight map keeps a floor of .32 along the top and bottom. Result over white: top 238 (Apple 235), end 198 (190),
+bottom 238 (231); over brown: top 74 (71), end 46 (40). It is the same filter, so no pass is added, and dark is
+pixel-identical (client captures before and after, toolbar and player).
+
+**The light inside the top and bottom edge already matched.** Over the brown page, the 36pt button, from 3px inside to
+the edge: Apple 165, 178, 192 over a face of 163; mcloud 162, 173, 194 (+11/+32 against +15/+29). Over white both reach
+255 for two device pixels. The player over a dark page: Apple 206, 186, 170 over 162; mcloud 200, 181, 167 over 159.
+A first comparison suggested Music's button light was 1.4x mcloud's; that came from mcloud's toolbar shade lifting the
+page under the glass (117 instead of 87). Compare light measurements with the page under both glasses the same.
+
+**No darker band inside the edge** over flat pages: the face rises steadily toward the top and bottom edges (white:
+248 in the middle, 253 at 2px from the edge; brown: 156 -> 165) and is flat toward the round ends. What reads as a
+shade inside the edge in Music's light glass is the outline itself (and, over busy content, the bend reading darker
+content near the rim).
+
+**Not matched yet:** over the brown page Music's light glass keeps more of the page's hue (face 196,146,132, mcloud's
+greyer); a faint shadow under Music's toolbar buttons (about -3 on white, ~15px); and in its search field the
+magnifier and placeholder are the same secondary grey (L 125 over 250, i.e. black at ~50%), 12.5pt, while the filter
+button's icon is black: mcloud's magnifier is near black (43) and 16pt, its placeholder 87.
+
+![36pt button, light](compare/light/button-light.png)
+![Search field over white](compare/light/search-light.png)
+
+**The mini player's transport** (AX frames of `Music.miniPlayer.*` and glyph boxes from a capture over the album page's
+plain end, `tools/light/abox.py`): the bar is 700 x 54pt, its buttons start 9pt in, back to back, 28pt wide except play
+(36pt): centres 23, 51, 83, 115, 143pt; the title area (406pt) starts 9pt after repeat; lyrics, queue and volume are
+36pt buttons at 581, 618, 655 (the last centred 27pt from the right end). Glyph boxes (pt): shuffle 13 x 10.5, previous
+and next 19.5 x 11 (centred 0.25pt away from play), play 19 x 21 (1pt right of centre), repeat 12 x 10.5, lyrics
+19 x 17.5, queue 17.5 x 12.5, volume muted 16.5 x 16, the Apple logo 20.5 x 25. Music was not playing, so pause is
+not measured. mcloud's transport was redrawn to these boxes (overlay: Music, mcloud before, after, and Music in red over
+mcloud in cyan):
+
+![Transport overlay](compare/light/transport-overlay.png)
+
 ## Open questions
 
 - Synthetic scroll events scroll Music's home unreliably (up sometimes, down never), so motion against Music itself
   was compared with the lab's `NSGlassView` (proven equal to Music's player over the same background) rather than
   with Music scrolling. A recording of Music scrolling by hand would close that gap.
-- The highlight table and the dark/bright edge shading are fitted on a dark page; light pages are less covered.
+- The highlight table and the dark/bright edge shading are fitted on a dark page; light pages are less covered (the light
+  appearance's edge light was checked on white and one brown page only, 2026-11-02).
+- Light appearance: the hue Music's light glass keeps over coloured pages, the shadow under toolbar buttons, pause's box.
 - Toolbar buttons: do `.glassEffect(.regular.interactive())`, `.buttonStyle(.glass)` and `NSButton` `.glass` move like
   Music's toolbar items? A lab app with the same step scripts (`tools/buttons/rec` needs a bundle id switch) would tell.
 - Menus: Apple's top edge bent about twice as far as the bottom in the first phase reading (14px: 33 vs 15); the fit
